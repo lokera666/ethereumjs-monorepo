@@ -15,7 +15,7 @@ tape(`${method}: call with valid arguments`, async (t) => {
       }
     },
   }
-  const manager = createManager(createClient({ chain: mockChain }))
+  const manager = createManager(createClient({ chain: mockChain, includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method)

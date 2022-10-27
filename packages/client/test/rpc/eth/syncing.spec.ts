@@ -10,7 +10,7 @@ import type { FullSynchronizer } from '../../../lib/sync'
 const method = 'eth_syncing'
 
 tape(`${method}: should return false when the client is synchronized`, async (t) => {
-  const client = createClient()
+  const client = createClient({ includeVM: true })
   const manager = createManager(client)
   const server = startRPC(manager.getMethods())
 
@@ -28,7 +28,7 @@ tape(`${method}: should return false when the client is synchronized`, async (t)
 })
 
 tape(`${method}: should return no peer available error`, async (t) => {
-  const client = createClient({ noPeers: true })
+  const client = createClient({ noPeers: true, includeVM: true })
   const manager = createManager(client)
   const rpcServer = startRPC(manager.getMethods())
 
@@ -42,7 +42,7 @@ tape(`${method}: should return no peer available error`, async (t) => {
 })
 
 tape(`${method}: should return highest block header unavailable error`, async (t) => {
-  const client = createClient()
+  const client = createClient({ includeVM: true })
   const manager = createManager(client)
   const rpcServer = startRPC(manager.getMethods())
 
@@ -60,7 +60,7 @@ tape(`${method}: should return highest block header unavailable error`, async (t
 })
 
 tape(`${method}: should return syncing status object when unsynced`, async (t) => {
-  const client = createClient()
+  const client = createClient({ includeVM: true })
   const manager = createManager(client)
   const rpcServer = startRPC(manager.getMethods())
 

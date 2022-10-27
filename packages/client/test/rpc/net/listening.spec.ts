@@ -5,7 +5,7 @@ import { baseRequest, createClient, createManager, params, startRPC } from '../h
 const method = 'net_listening'
 
 tape(`${method}: call while listening`, async (t) => {
-  const manager = createManager(createClient({ opened: true }))
+  const manager = createManager(createClient({ opened: true, includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method, [])
@@ -20,7 +20,7 @@ tape(`${method}: call while listening`, async (t) => {
 })
 
 tape(`${method}: call while not listening`, async (t) => {
-  const manager = createManager(createClient({ opened: false }))
+  const manager = createManager(createClient({ opened: false, includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method, [])

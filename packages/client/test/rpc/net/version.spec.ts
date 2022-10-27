@@ -20,7 +20,11 @@ function compareResult(t: any, result: any, chainId: any) {
 
 tape(`${method}: call on ropsten`, async (t) => {
   const manager = createManager(
-    createClient({ opened: true, commonChain: new Common({ chain: Chain.Ropsten }) })
+    createClient({
+      opened: true,
+      commonChain: new Common({ chain: Chain.Ropsten }),
+      includeVM: true,
+    })
   )
   const server = startRPC(manager.getMethods())
 
@@ -33,7 +37,7 @@ tape(`${method}: call on ropsten`, async (t) => {
 })
 
 tape(`${method}: call on mainnet`, async (t) => {
-  const { server } = baseSetup()
+  const { server } = baseSetup({ includeVM: true })
 
   const req = params(method, [])
   const expectRes = (res: any) => {
@@ -47,7 +51,11 @@ tape(`${method}: call on rinkeby`, async (t) => {
   // Stub out block consensusFormatValidation checks
   BlockHeader.prototype._consensusFormatValidation = td.func<any>()
   const manager = createManager(
-    createClient({ opened: true, commonChain: new Common({ chain: Chain.Rinkeby }) })
+    createClient({
+      opened: true,
+      commonChain: new Common({ chain: Chain.Rinkeby }),
+      includeVM: true,
+    })
   )
   const server = startRPC(manager.getMethods())
 
@@ -62,7 +70,11 @@ tape(`${method}: call on rinkeby`, async (t) => {
 
 tape(`${method}: call on goerli`, async (t) => {
   const manager = createManager(
-    createClient({ opened: true, commonChain: new Common({ chain: Chain.Goerli }) })
+    createClient({
+      opened: true,
+      commonChain: new Common({ chain: Chain.Goerli }),
+      includeVM: true,
+    })
   )
   const server = startRPC(manager.getMethods())
 

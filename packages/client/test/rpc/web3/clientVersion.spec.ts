@@ -6,7 +6,7 @@ import { baseRequest, baseSetup, params } from '../helpers'
 const method = 'web3_clientVersion'
 
 tape(`${method}: call`, async (t) => {
-  const { server } = baseSetup()
+  const { server } = baseSetup({ includeVM: true })
 
   const req = params(method, [])
   const expectRes = (res: any) => {

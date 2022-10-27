@@ -54,7 +54,7 @@ function createChain() {
 const method = 'eth_getBlockByNumber'
 
 tape(`${method}: call with valid arguments`, async (t) => {
-  const manager = createManager(createClient({ chain: createChain() }))
+  const manager = createManager(createClient({ chain: createChain(), includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method, ['0x0', false])
@@ -66,7 +66,7 @@ tape(`${method}: call with valid arguments`, async (t) => {
 })
 
 tape(`${method}: call with false for second argument`, async (t) => {
-  const manager = createManager(createClient({ chain: createChain() }))
+  const manager = createManager(createClient({ chain: createChain(), includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method, ['0x0', false])
@@ -80,7 +80,7 @@ tape(`${method}: call with false for second argument`, async (t) => {
 })
 
 tape(`${method}: call with earliest param`, async (t) => {
-  const manager = createManager(createClient({ chain: createChain() }))
+  const manager = createManager(createClient({ chain: createChain(), includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method, ['earliest', false])
@@ -92,7 +92,7 @@ tape(`${method}: call with earliest param`, async (t) => {
 })
 
 tape(`${method}: call with latest param`, async (t) => {
-  const manager = createManager(createClient({ chain: createChain() }))
+  const manager = createManager(createClient({ chain: createChain(), includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method, ['latest', false])
@@ -105,7 +105,7 @@ tape(`${method}: call with latest param`, async (t) => {
 })
 
 tape(`${method}: call with unimplemented pending param`, async (t) => {
-  const manager = createManager(createClient({ chain: createChain() }))
+  const manager = createManager(createClient({ chain: createChain(), includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method, ['pending', true])
@@ -115,7 +115,7 @@ tape(`${method}: call with unimplemented pending param`, async (t) => {
 })
 
 tape(`${method}: call with non-string block number`, async (t) => {
-  const manager = createManager(createClient({ chain: createChain() }))
+  const manager = createManager(createClient({ chain: createChain(), includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method, [10, true])
@@ -124,7 +124,7 @@ tape(`${method}: call with non-string block number`, async (t) => {
 })
 
 tape(`${method}: call with invalid block number`, async (t) => {
-  const manager = createManager(createClient({ chain: createChain() }))
+  const manager = createManager(createClient({ chain: createChain(), includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method, ['WRONG BLOCK NUMBER', true])
@@ -138,7 +138,7 @@ tape(`${method}: call with invalid block number`, async (t) => {
 })
 
 tape(`${method}: call without second parameter`, async (t) => {
-  const manager = createManager(createClient({ chain: createChain() }))
+  const manager = createManager(createClient({ chain: createChain(), includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method, ['0x0'])
@@ -147,7 +147,7 @@ tape(`${method}: call without second parameter`, async (t) => {
 })
 
 tape(`${method}: call with invalid second parameter`, async (t) => {
-  const manager = createManager(createClient({ chain: createChain() }))
+  const manager = createManager(createClient({ chain: createChain(), includeVM: true }))
   const server = startRPC(manager.getMethods())
 
   const req = params(method, ['0x0', 'INVALID PARAMETER'])
@@ -156,7 +156,7 @@ tape(`${method}: call with invalid second parameter`, async (t) => {
 })
 
 tape(`${method}: call with transaction objects`, async (t) => {
-  const manager = createManager(createClient({ chain: createChain() }))
+  const manager = createManager(createClient({ chain: createChain(), includeVM: true }))
   const server = startRPC(manager.getMethods())
   const req = params(method, ['latest', true])
 

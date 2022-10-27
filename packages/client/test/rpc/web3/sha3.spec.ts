@@ -15,7 +15,7 @@ function compareErrorMsg(t: any, error: any, errorMsg: any) {
 }
 
 tape(`${method}: call with one valid parameter`, async (t) => {
-  const { server } = baseSetup()
+  const { server } = baseSetup({ includeVM: true })
 
   const req = params(method, ['0x68656c6c6f20776f726c64'])
   const expectRes = (res: any) => {
@@ -30,7 +30,7 @@ tape(`${method}: call with one valid parameter`, async (t) => {
 })
 
 tape(`${method}: call with one non-hex parameter`, async (t) => {
-  const { server } = baseSetup()
+  const { server } = baseSetup({ includeVM: true })
 
   const req = params(method, ['hello world'])
   const expectRes = (res: any) => {
@@ -45,7 +45,7 @@ tape(`${method}: call with one non-hex parameter`, async (t) => {
 })
 
 tape(`${method}: call with no parameters`, async (t) => {
-  const { server } = baseSetup()
+  const { server } = baseSetup({ includeVM: true })
 
   const req = params(method, [])
   const expectRes = (res: any) => {

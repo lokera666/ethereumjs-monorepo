@@ -1,4 +1,5 @@
 import { Chain, Common, Hardfork } from '@ethereumjs/common'
+import { DefaultStateManager } from '@ethereumjs/statemanager'
 import { FeeMarketEIP1559Transaction, Transaction } from '@ethereumjs/tx'
 import { toBuffer } from '@ethereumjs/util'
 import * as tape from 'tape'
@@ -10,8 +11,9 @@ import { checkError } from '../util'
 import type { FullEthereumService } from '../../../lib/service'
 
 const method = 'eth_sendRawTransaction'
-
+const ogSetStateRoot = DefaultStateManager.prototype.setStateRoot
 tape(`${method}: call with valid arguments`, async (t) => {
+  DefaultStateManager.prototype.setStateRoot = (): any => {}
   const syncTargetHeight = new Common({ chain: Chain.Mainnet }).hardforkBlock(Hardfork.London)
   const { server, client } = baseSetup({ syncTargetHeight, includeVM: true })
 
@@ -77,7 +79,7 @@ tape(`${method}: call with invalid arguments: not enough balance`, async (t) => 
 })
 
 tape(`${method}: call with sync target height not set yet`, async (t) => {
-  const { server } = baseSetup()
+  const { server } = baseSetup({ includeVM: true })
 
   // Mainnet EIP-1559 tx
   const txData =
@@ -107,7 +109,7 @@ tape(`${method}: call with invalid tx (wrong chain ID)`, async (t) => {
 
 tape(`${method}: call with unsigned tx`, async (t) => {
   const syncTargetHeight = new Common({ chain: Chain.Mainnet }).hardforkBlock(Hardfork.London)
-  const { server } = baseSetup({ syncTargetHeight })
+  const { server } = baseSetup({ syncTargetHeight, includeVM: true })
 
   // Mainnet EIP-1559 tx
   const txData =
@@ -153,4 +155,5 @@ tape(`${method}: call with no peers`, async (t) => {
 
   const expectRes = checkError(t, INTERNAL_ERROR, 'no peer connection available')
   await baseRequest(t, server, req, 200, expectRes)
+  DefaultStateManager.prototype.setStateRoot = ogSetStateRoot
 })

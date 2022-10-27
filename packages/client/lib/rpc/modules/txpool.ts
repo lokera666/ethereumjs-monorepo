@@ -1,3 +1,4 @@
+import { jsonRpcTx } from '../util/formatters'
 import { middleware } from '../validation'
 
 import type { EthereumClient } from '../..'
@@ -24,7 +25,7 @@ export class TxPool {
   }
 
   /**
-   * Returns the contents of the transaction pool
+   * Returns the contents of the transaction pool ordered by account and nonce
    * @param params An empty array
    */
   content(_params = []) {
@@ -32,7 +33,7 @@ export class TxPool {
     for (const pool of this._txpool.pool) {
       const pendingForAcct = new Map<bigint, any>()
       for (const tx of pool[1]) {
-        pendingForAcct.set(tx.tx.nonce, tx.tx.toJSON())
+        pendingForAcct.set(tx.tx.nonce, jsonRpcTx(tx.tx))
       }
       if (pendingForAcct.size > 0) pending.set('0x' + pool[0], Object.fromEntries(pendingForAcct))
     }

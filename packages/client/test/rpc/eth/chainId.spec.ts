@@ -10,7 +10,7 @@ const method = 'eth_chainId'
 const originalValidate = BlockHeader.prototype._consensusFormatValidation
 
 tape(`${method}: calls`, async (t) => {
-  const { server } = baseSetup()
+  const { server } = baseSetup({ includeVM: true })
 
   const req = params(method, [])
   const expectRes = (res: any) => {
@@ -21,7 +21,7 @@ tape(`${method}: calls`, async (t) => {
 })
 
 tape(`${method}: returns 1 for Mainnet`, async (t) => {
-  const { server } = baseSetup()
+  const { server } = baseSetup({ includeVM: true })
 
   const req = params(method, [])
   const expectRes = (res: any) => {
@@ -33,7 +33,11 @@ tape(`${method}: returns 1 for Mainnet`, async (t) => {
 
 tape(`${method}: returns 3 for Ropsten`, async (t) => {
   const manager = createManager(
-    createClient({ opened: true, commonChain: new Common({ chain: Chain.Ropsten }) })
+    createClient({
+      opened: true,
+      commonChain: new Common({ chain: Chain.Ropsten }),
+      includeVM: true,
+    })
   )
   const server = startRPC(manager.getMethods())
 
