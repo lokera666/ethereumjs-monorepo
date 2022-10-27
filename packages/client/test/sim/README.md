@@ -59,7 +59,7 @@ EXTERNAL_RUN=true npm run tape -- test/sim/shandong.spec.ts
 #### Manual run to setup network
 
 1. Clean DATADIR (`rm -rf data/shandong/*`) in start of each run and do `mkdir data/shandong/ethereumjs && mkdir data/shandong/lodestar`
-2. Start ethereumjs: `npm run client:start -- --datadir data/shandong/ethereumjs --gethGenesis test/sim/configs/geth-genesis.json --rpc --rpcEngine --rpcEngineAuth false`
+2. Start ethereumjs: `npm run client:start -- --datadir data/shandong/ethereumjs --gethGenesis test/sim/configs/shandong.json --rpc --rpcEngine --rpcEngineAuth false`
 3. Get genesis hash from `ethereumjs` client:
 
 ```
