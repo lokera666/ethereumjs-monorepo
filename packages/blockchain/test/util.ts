@@ -1,23 +1,30 @@
-import { Block, BlockHeader } from '@ethereumjs/block'
-import { Chain, Common, Hardfork } from '@ethereumjs/common'
+import { Block, createBlock, createBlockHeader } from '@ethereumjs/block'
+import { Common, Hardfork, Mainnet } from '@ethereumjs/common'
 import { RLP } from '@ethereumjs/rlp'
-import { bufArrToArr, toBuffer } from '@ethereumjs/util'
-import { keccak256 } from 'ethereum-cryptography/keccak'
-import { MemoryLevel } from 'memory-level'
+import {
+  MapDB,
+  bytesToUnprefixedHex,
+  equalsBytes,
+  hexToBytes,
+  toBytes,
+  utf8ToBytes,
+} from '@ethereumjs/util'
+import { keccak256 } from 'ethereum-cryptography/keccak.js'
 
-import { Blockchain } from '../src'
+import { createBlockchain } from '../src/index.js'
 
-import type { Level } from 'level'
+import type { BlockHeader } from '@ethereumjs/block'
+import type { DB } from '@ethereumjs/util'
 
 export const generateBlocks = (numberOfBlocks: number, existingBlocks?: Block[]): Block[] => {
   const blocks = existingBlocks ? existingBlocks : []
 
   const gasLimit = 8000000
-  const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Chainstart })
+  const common = new Common({ chain: Mainnet, hardfork: Hardfork.Chainstart })
   const opts = { common }
 
   if (blocks.length === 0) {
-    const genesis = Block.fromBlockData({ header: { gasLimit } }, opts)
+    const genesis = createBlock({ header: { gasLimit } }, opts)
     blocks.push(genesis)
   }
 
@@ -31,7 +38,7 @@ export const generateBlocks = (numberOfBlocks: number, existingBlocks?: Block[])
         timestamp: lastBlock.header.timestamp + BigInt(1),
       },
     }
-    const block = Block.fromBlockData(blockData, {
+    const block = createBlock(blockData, {
       common,
       calcDifficultyFromHeader: lastBlock.header,
     })
@@ -45,9 +52,8 @@ export const generateBlockchain = async (numberOfBlocks: number, genesis?: Block
   const existingBlocks: Block[] = genesis ? [genesis] : []
   const blocks = generateBlocks(numberOfBlocks, existingBlocks)
 
-  const blockchain = await Blockchain.create({
+  const blockchain = await createBlockchain({
     validateBlocks: true,
-    validateConsensus: false,
     genesisBlock: genesis ?? blocks[0],
   })
   try {
@@ -71,20 +77,20 @@ export const generateBlockchain = async (numberOfBlocks: number, genesis?: Block
 export const generateConsecutiveBlock = (
   parentBlock: Block,
   difficultyChangeFactor: number,
-  gasLimit: bigint = BigInt(8000000)
+  gasLimit: bigint = BigInt(8000000),
 ): Block => {
   if (difficultyChangeFactor > 1) {
     difficultyChangeFactor = 1
   }
-  const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.MuirGlacier })
-  const tmpHeader = BlockHeader.fromHeaderData(
+  const common = new Common({ chain: Mainnet, hardfork: Hardfork.MuirGlacier })
+  const tmpHeader = createBlockHeader(
     {
       number: parentBlock.header.number + BigInt(1),
       timestamp: parentBlock.header.timestamp + BigInt(10 + -difficultyChangeFactor * 9),
     },
-    { common }
+    { common },
   )
-  const header = BlockHeader.fromHeaderData(
+  const header = createBlockHeader(
     {
       number: parentBlock.header.number + BigInt(1),
       parentHash: parentBlock.hash(),
@@ -95,10 +101,10 @@ export const generateConsecutiveBlock = (
     {
       common,
       calcDifficultyFromHeader: parentBlock.header,
-    }
+    },
   )
 
-  const block = new Block(header, undefined, undefined, { common })
+  const block = new Block(header, undefined, undefined, undefined, { common }, undefined)
 
   return block
 }
@@ -110,81 +116,66 @@ export const isConsecutive = (blocks: Block[]) => {
     }
     const { parentHash } = block.header
     const lastBlockHash = blocks[index - 1].hash()
-    return !parentHash.equals(lastBlockHash)
+    return !equalsBytes(parentHash, lastBlockHash)
   })
 }
 
-export const createTestDB = async (): Promise<[Level<any, any>, Block]> => {
-  const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Chainstart })
-  const genesis = Block.fromBlockData({ header: { number: 0 } }, { common })
-  const db = new MemoryLevel<any, any>()
+export const createTestDB = async (): Promise<
+  [DB<string | Uint8Array, string | Uint8Array>, Block]
+> => {
+  const common = new Common({ chain: Mainnet, hardfork: Hardfork.Chainstart })
+  const genesis = createBlock({ header: { number: 0 } }, { common })
+  const db = new MapDB<any, any>()
+
   await db.batch([
     {
       type: 'put',
-      key: Buffer.from('6800000000000000006e', 'hex'),
-      keyEncoding: 'buffer',
-      valueEncoding: 'buffer',
+      key: hexToBytes('0x6800000000000000006e'),
       value: genesis.hash(),
     },
     {
       type: 'put',
-      key: Buffer.from('48d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3', 'hex'),
-      keyEncoding: 'buffer',
-      valueEncoding: 'buffer',
-      value: Buffer.from('00', 'hex'),
+      key: hexToBytes('0x48d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3'),
+      value: hexToBytes('0x00'),
     },
     {
       type: 'put',
       key: 'LastHeader',
-      keyEncoding: 'buffer',
-      valueEncoding: 'buffer',
       value: genesis.hash(),
     },
     {
       type: 'put',
       key: 'LastBlock',
-      keyEncoding: 'buffer',
-      valueEncoding: 'buffer',
       value: genesis.hash(),
     },
     {
       type: 'put',
-      key: Buffer.from(
-        '680000000000000000d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3',
-        'hex'
+      key: hexToBytes(
+        '0x680000000000000000d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3',
       ),
-      keyEncoding: 'buffer',
-      valueEncoding: 'buffer',
       value: genesis.header.serialize(),
     },
     {
       type: 'put',
-      key: Buffer.from(
-        '680000000000000000d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa374',
-        'hex'
+      key: hexToBytes(
+        '0x680000000000000000d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa374',
       ),
-      keyEncoding: 'buffer',
-      valueEncoding: 'buffer',
-      value: Buffer.from(RLP.encode(Uint8Array.from(toBuffer(17179869184)))),
+      value: RLP.encode(toBytes(17179869184)),
     },
     {
       type: 'put',
-      key: Buffer.from(
-        '620000000000000000d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3',
-        'hex'
+      key: hexToBytes(
+        '0x620000000000000000d4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3',
       ),
-      keyEncoding: 'buffer',
-      valueEncoding: 'buffer',
-      value: Buffer.from(RLP.encode(bufArrToArr(genesis.raw()).slice(1))),
+      value: RLP.encode(genesis.raw().slice(1)),
     },
     {
       type: 'put',
       key: 'heads',
-      valueEncoding: 'json',
-      value: { head0: { type: 'Buffer', data: [171, 205] } },
+      value: { head0: bytesToUnprefixedHex(Uint8Array.from([171, 205])) },
     },
   ])
-  return [db as any, genesis]
+  return [db, genesis]
 }
 
 /**
@@ -193,14 +184,14 @@ export const createTestDB = async (): Promise<[Level<any, any>, Block]> => {
  * @param extraData - Extra data graffiti in order to create equal blocks (like block number) but with different hashes
  * @param uncles - Optional, an array of uncle headers. Automatically calculates the uncleHash.
  */
-function createBlock(
+function generateBlock(
   parentBlock: Block,
   extraData: string,
   uncles?: BlockHeader[],
-  common?: Common
+  common?: Common,
 ): Block {
   uncles = uncles ?? []
-  common = common ?? new Common({ chain: Chain.Mainnet })
+  common = common ?? new Common({ chain: Mainnet })
 
   if (extraData.length > 32) {
     throw new Error('extra data graffiti must be 32 bytes or less')
@@ -209,7 +200,7 @@ function createBlock(
   const number = parentBlock.header.number + BigInt(1)
   const timestamp = parentBlock.header.timestamp + BigInt(1)
 
-  const uncleHash = keccak256(RLP.encode(bufArrToArr(uncles.map((uh) => uh.raw()))))
+  const uncleHash = keccak256(RLP.encode(uncles.map((uh) => uh.raw())))
 
   const londonHfBlock = common.hardforkBlock(Hardfork.London)
   const baseFeePerGas =
@@ -217,14 +208,14 @@ function createBlock(
       ? parentBlock.header.calcNextBaseFee()
       : undefined
 
-  return Block.fromBlockData(
+  return createBlock(
     {
       header: {
         number,
         parentHash: parentBlock.hash(),
         timestamp,
         gasLimit: parentBlock.header.gasLimit,
-        extraData: Buffer.from(extraData),
+        extraData: utf8ToBytes(extraData),
         uncleHash,
         baseFeePerGas,
       },
@@ -233,8 +224,8 @@ function createBlock(
     {
       common,
       calcDifficultyFromHeader: parentBlock.header,
-    }
+    },
   )
 }
 
-export { createBlock }
+export { generateBlock }

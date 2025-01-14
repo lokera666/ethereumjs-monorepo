@@ -1,12 +1,8 @@
 {
   "name": "@ethereumjs/util",
-  "version": "8.0.2",
+  "version": "10.0.0-alpha.1",
   "description": "A collection of utility functions for Ethereum",
-  "keywords": [
-    "ethereum",
-    "utilities",
-    "utils"
-  ],
+  "keywords": ["ethereum", "utilities", "utils"],
   "homepage": "https://github.com/ethereumjs/ethereumjs-monorepo/tree/master/packages/util#readme",
   "bugs": {
     "url": "https://github.com/ethereumjs/ethereumjs-monorepo/issues?q=is%3Aissue+label%3A%22package%3A+util%22"
@@ -61,37 +57,42 @@
       "url": "https://github.com/asinyagin"
     }
   ],
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "src"
-  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "files": ["dist", "src"],
   "scripts": {
     "build": "../../config/cli/ts-build.sh",
     "clean": "../../config/cli/clean-package.sh",
-    "coverage": "../../config/cli/coverage.sh",
-    "docs:build": "npx typedoc --options typedoc.js",
-    "lint": "../../config/cli/lint.sh",
-    "lint:diff": "../../config/cli/lint-diff.sh",
-    "lint:fix": "../../config/cli/lint-fix.sh",
+    "coverage": "DEBUG=ethjs npx vitest run --coverage.enabled --coverage.reporter=lcov",
+    "docs:build": "npx typedoc --options typedoc.cjs",
+    "examples": "tsx ../../scripts/examples-runner.ts -- util",
+    "examples:build": "npx embedme README.md",
+    "lint": "eslint --config .eslintrc.cjs . --ext .js,.ts",
+    "lint:fix": "eslint --fix --config .eslintrc.cjs . --ext .js,.ts",
     "prepublishOnly": "../../config/cli/prepublish.sh",
-    "tape": "tape -r ts-node/register",
     "test": "npm run test:node && npm run test:browser",
-    "test:browser": "karma start karma.conf.js",
-    "test:node": "npm run tape -- test/*.spec.ts",
+    "test:browser": "npx vitest run --config=../../config/vitest.config.browser.mts",
+    "test:node": "npx vitest run",
     "tsc": "../../config/cli/ts-compile.sh"
   },
   "dependencies": {
-    "@ethereumjs/rlp": "^4.0.0-beta.2",
-    "async": "^3.2.4",
-    "ethereum-cryptography": "^1.1.2"
+    "@ethereumjs/rlp": "^6.0.0-alpha.1",
+    "ethereum-cryptography": "^3.0.0"
   },
   "devDependencies": {
-    "@types/bn.js": "^5.1.0",
-    "@types/secp256k1": "^4.0.1"
+    "@paulmillr/trusted-setups": "^0.1.2",
+    "kzg-wasm": "^0.5.0",
+    "micro-eth-signer": "^0.12.1"
   },
   "engines": {
-    "node": ">=14"
+    "node": ">=18"
   }
 }

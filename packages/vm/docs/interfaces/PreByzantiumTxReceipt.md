@@ -24,7 +24,7 @@ for the intermediary state root
 
 ### bitvector
 
-• **bitvector**: `Buffer`
+• **bitvector**: `Uint8Array`
 
 Bloom bitvector
 
@@ -34,7 +34,7 @@ Bloom bitvector
 
 #### Defined in
 
-[packages/vm/src/types.ts:22](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L22)
+[vm/src/types.ts:21](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L21)
 
 ___
 
@@ -50,7 +50,7 @@ Cumulative gas used in the block including this tx
 
 #### Defined in
 
-[packages/vm/src/types.ts:18](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L18)
+[vm/src/types.ts:17](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L17)
 
 ___
 
@@ -66,16 +66,16 @@ Logs emitted
 
 #### Defined in
 
-[packages/vm/src/types.ts:26](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L26)
+[vm/src/types.ts:25](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L25)
 
 ___
 
 ### stateRoot
 
-• **stateRoot**: `Buffer`
+• **stateRoot**: `Uint8Array`
 
 Intermediary state root
 
 #### Defined in
 
-[packages/vm/src/types.ts:37](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L37)
+[vm/src/types.ts:36](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L36)

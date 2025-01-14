@@ -1,31 +1,40 @@
-import { Blockchain } from '@ethereumjs/blockchain'
-import { TransactionFactory } from '@ethereumjs/tx'
-import { Account } from '@ethereumjs/util'
+import { createBlockchain } from '@ethereumjs/blockchain'
+import { TransactionType, createTx } from '@ethereumjs/tx'
+import {
+  Account,
+  blobsToCommitments,
+  computeVersionedHash,
+  getBlobs,
+  hexToBytes,
+} from '@ethereumjs/util'
 import { MemoryLevel } from 'memory-level'
 
-import { VM } from '../../src/vm'
+import { createVM } from '../../src/index.js'
 
-import type { VMOpts } from '../../src/types'
+import { LevelDB } from './level.js'
+
+import type { VMOpts } from '../../src/types.js'
+import type { VM } from '../../src/vm.js'
 import type { Block } from '@ethereumjs/block'
 import type { Common } from '@ethereumjs/common'
-import type { Address } from '@ethereumjs/util'
+import type { Address, PrefixedHexString } from '@ethereumjs/util'
 
-export function createAccount(nonce = BigInt(0), balance = BigInt(0xfff384)) {
+export function createAccountWithDefaults(nonce = BigInt(0), balance = BigInt(0xfff384)) {
   return new Account(nonce, balance)
 }
 
 export async function setBalance(vm: VM, address: Address, balance = BigInt(100000000)) {
-  const account = createAccount(BigInt(0), balance)
-  await vm.eei.checkpoint()
-  await vm.eei.putAccount(address, account)
-  await vm.eei.commit()
+  const account = createAccountWithDefaults(BigInt(0), balance)
+  await vm.stateManager.checkpoint()
+  await vm.stateManager.putAccount(address, account)
+  await vm.stateManager.commit()
 }
 
 export async function setupVM(opts: VMOpts & { genesisBlock?: Block } = {}) {
-  const db: any = new MemoryLevel()
+  const db: any = new LevelDB(new MemoryLevel())
   const { common, genesisBlock } = opts
-  if (!opts.blockchain) {
-    opts.blockchain = await Blockchain.create({
+  if (opts.blockchain === undefined) {
+    opts.blockchain = await createBlockchain({
       db,
       validateBlocks: false,
       validateConsensus: false,
@@ -33,22 +42,19 @@ export async function setupVM(opts: VMOpts & { genesisBlock?: Block } = {}) {
       genesisBlock,
     })
   }
-  const vm = await VM.create({
+  const vm = await createVM({
     ...opts,
   })
   return vm
 }
 
-export async function getEEI() {
-  return (await setupVM()).eei
-}
-
 export function getTransaction(
   common: Common,
-  txType = 0,
+  txType = TransactionType.Legacy,
   sign = false,
   value = '0x00',
-  createContract = false
+  createContract = false,
+  nonce = 0,
 ) {
   let to: string | undefined = '0x0000000000000000000000000000000000000000'
   let data = '0x7f7465737432000000000000000000000000000000000000000000000000000000600057'
@@ -60,7 +66,7 @@ export function getTransaction(
   }
 
   const txParams: any = {
-    nonce: 0,
+    nonce,
     gasPrice: 100,
     gasLimit: 90000,
     to,
@@ -68,11 +74,11 @@ export function getTransaction(
     data,
   }
 
-  if (txType > 0) {
+  if (txType > TransactionType.Legacy) {
     txParams['type'] = txType
   }
 
-  if (txType === 1) {
+  if (txType === TransactionType.AccessListEIP2930) {
     txParams['chainId'] = common.chainId()
     txParams['accessList'] = [
       {
@@ -83,30 +89,36 @@ export function getTransaction(
         ],
       },
     ]
-  } else if (txType === 2) {
+  } else if (txType === TransactionType.FeeMarketEIP1559) {
     txParams['gasPrice'] = undefined
     txParams['maxFeePerGas'] = BigInt(100)
     txParams['maxPriorityFeePerGas'] = BigInt(10)
+  } else if (txType === TransactionType.BlobEIP4844) {
+    if (common.customCrypto?.kzg === undefined) {
+      throw new Error('kzg instance required to instantiate blob txs')
+    }
+    txParams['gasPrice'] = undefined
+    txParams['maxFeePerGas'] = BigInt(1000000000)
+    txParams['maxPriorityFeePerGas'] = BigInt(10)
+    txParams['maxFeePerBlobGas'] = BigInt(100)
+    txParams['blobs'] = getBlobs('hello world')
+    txParams['kzgCommitments'] = blobsToCommitments(common.customCrypto!.kzg!, txParams['blobs'])
+    txParams['kzgProofs'] = txParams['blobs'].map((blob: PrefixedHexString, ctx: number) =>
+      common.customCrypto!.kzg!.computeBlobProof(blob, txParams['kzgCommitments'][ctx]),
+    )
+    txParams['blobVersionedHashes'] = txParams['kzgCommitments'].map(
+      (commitment: PrefixedHexString) => computeVersionedHash(commitment, 0x1),
+    )
   }
 
-  const tx = TransactionFactory.fromTxData(txParams, { common, freeze: false })
+  const tx = createTx(txParams, { common, freeze: false })
 
   if (sign) {
-    const privateKey = Buffer.from(
-      'e331b6d69882b4cb4ea581d88e0b604039a3de5967688d3dcffdd2270c0fd109',
-      'hex'
+    const privateKey = hexToBytes(
+      '0xe331b6d69882b4cb4ea581d88e0b604039a3de5967688d3dcffdd2270c0fd109',
     )
     return tx.sign(privateKey)
   }
 
   return tx
-}
-
-/**
- * Checks if in a karma test runner.
- * @returns boolean whether running in karma
- */
-export function isRunningInKarma(): boolean {
-  // eslint-disable-next-line no-undef
-  return typeof (<any>globalThis).window !== 'undefined' && (<any>globalThis).window.__karma__
 }

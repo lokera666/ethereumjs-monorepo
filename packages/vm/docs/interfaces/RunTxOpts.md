@@ -11,8 +11,10 @@ Options for the `runTx` method.
 - [block](RunTxOpts.md#block)
 - [blockGasUsed](RunTxOpts.md#blockgasused)
 - [reportAccessList](RunTxOpts.md#reportaccesslist)
+- [reportPreimages](RunTxOpts.md#reportpreimages)
 - [skipBalance](RunTxOpts.md#skipbalance)
 - [skipBlockGasLimitValidation](RunTxOpts.md#skipblockgaslimitvalidation)
+- [skipHardForkValidation](RunTxOpts.md#skiphardforkvalidation)
 - [skipNonce](RunTxOpts.md#skipnonce)
 - [tx](RunTxOpts.md#tx)
 
@@ -27,7 +29,7 @@ If omitted, a default blank block will be used.
 
 #### Defined in
 
-[packages/vm/src/types.ts:288](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L288)
+[vm/src/types.ts:342](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L342)
 
 ___
 
@@ -39,7 +41,7 @@ To obtain an accurate tx receipt input the block gas used up until this tx.
 
 #### Defined in
 
-[packages/vm/src/types.ts:323](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L323)
+[vm/src/types.ts:390](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L390)
 
 ___
 
@@ -58,7 +60,20 @@ StateManager.generateAccessList must be implemented.
 
 #### Defined in
 
-[packages/vm/src/types.ts:318](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L318)
+[vm/src/types.ts:379](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L379)
+
+___
+
+### reportPreimages
+
+• `Optional` **reportPreimages**: `boolean`
+
+If true, adds a hashedKey -> preimages mapping of all touched accounts
+to the `RunTxResult` returned.
+
+#### Defined in
+
+[vm/src/types.ts:385](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L385)
 
 ___
 
@@ -70,7 +85,7 @@ Skip balance checks if true. Adds transaction cost to balance to ensure executio
 
 #### Defined in
 
-[packages/vm/src/types.ts:300](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L300)
+[vm/src/types.ts:355](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L355)
 
 ___
 
@@ -83,7 +98,20 @@ against the block's gas limit.
 
 #### Defined in
 
-[packages/vm/src/types.ts:306](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L306)
+[vm/src/types.ts:361](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L361)
+
+___
+
+### skipHardForkValidation
+
+• `Optional` **skipHardForkValidation**: `boolean`
+
+If true, skips the hardfork validation of vm, block
+and tx
+
+#### Defined in
+
+[vm/src/types.ts:367](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L367)
 
 ___
 
@@ -95,7 +123,7 @@ If true, skips the nonce check
 
 #### Defined in
 
-[packages/vm/src/types.ts:296](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L296)
+[vm/src/types.ts:350](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L350)
 
 ___
 
@@ -107,4 +135,4 @@ An `@ethereumjs/tx` to run
 
 #### Defined in
 
-[packages/vm/src/types.ts:292](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L292)
+[vm/src/types.ts:346](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L346)

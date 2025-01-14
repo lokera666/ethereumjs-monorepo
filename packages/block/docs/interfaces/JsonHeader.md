@@ -9,8 +9,10 @@ An object with the block header's data represented as strings.
 ### Properties
 
 - [baseFeePerGas](JsonHeader.md#basefeepergas)
+- [blobGasUsed](JsonHeader.md#blobgasused)
 - [coinbase](JsonHeader.md#coinbase)
 - [difficulty](JsonHeader.md#difficulty)
+- [excessBlobGas](JsonHeader.md#excessblobgas)
 - [extraData](JsonHeader.md#extradata)
 - [gasLimit](JsonHeader.md#gaslimit)
 - [gasUsed](JsonHeader.md#gasused)
@@ -18,12 +20,14 @@ An object with the block header's data represented as strings.
 - [mixHash](JsonHeader.md#mixhash)
 - [nonce](JsonHeader.md#nonce)
 - [number](JsonHeader.md#number)
+- [parentBeaconBlockRoot](JsonHeader.md#parentbeaconblockroot)
 - [parentHash](JsonHeader.md#parenthash)
 - [receiptTrie](JsonHeader.md#receipttrie)
 - [stateRoot](JsonHeader.md#stateroot)
 - [timestamp](JsonHeader.md#timestamp)
 - [transactionsTrie](JsonHeader.md#transactionstrie)
 - [uncleHash](JsonHeader.md#unclehash)
+- [withdrawalsRoot](JsonHeader.md#withdrawalsroot)
 
 ## Properties
 
@@ -33,7 +37,17 @@ An object with the block header's data represented as strings.
 
 #### Defined in
 
-[types.ts:151](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L151)
+[types.ts:214](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L214)
+
+___
+
+### blobGasUsed
+
+• `Optional` **blobGasUsed**: `string`
+
+#### Defined in
+
+[types.ts:216](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L216)
 
 ___
 
@@ -43,7 +57,7 @@ ___
 
 #### Defined in
 
-[types.ts:138](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L138)
+[types.ts:201](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L201)
 
 ___
 
@@ -53,7 +67,17 @@ ___
 
 #### Defined in
 
-[types.ts:143](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L143)
+[types.ts:206](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L206)
+
+___
+
+### excessBlobGas
+
+• `Optional` **excessBlobGas**: `string`
+
+#### Defined in
+
+[types.ts:217](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L217)
 
 ___
 
@@ -63,7 +87,7 @@ ___
 
 #### Defined in
 
-[types.ts:148](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L148)
+[types.ts:211](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L211)
 
 ___
 
@@ -73,7 +97,7 @@ ___
 
 #### Defined in
 
-[types.ts:145](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L145)
+[types.ts:208](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L208)
 
 ___
 
@@ -83,7 +107,7 @@ ___
 
 #### Defined in
 
-[types.ts:146](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L146)
+[types.ts:209](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L209)
 
 ___
 
@@ -93,7 +117,7 @@ ___
 
 #### Defined in
 
-[types.ts:142](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L142)
+[types.ts:205](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L205)
 
 ___
 
@@ -103,7 +127,7 @@ ___
 
 #### Defined in
 
-[types.ts:149](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L149)
+[types.ts:212](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L212)
 
 ___
 
@@ -113,7 +137,7 @@ ___
 
 #### Defined in
 
-[types.ts:150](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L150)
+[types.ts:213](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L213)
 
 ___
 
@@ -123,7 +147,17 @@ ___
 
 #### Defined in
 
-[types.ts:144](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L144)
+[types.ts:207](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L207)
+
+___
+
+### parentBeaconBlockRoot
+
+• `Optional` **parentBeaconBlockRoot**: `string`
+
+#### Defined in
+
+[types.ts:218](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L218)
 
 ___
 
@@ -133,7 +167,7 @@ ___
 
 #### Defined in
 
-[types.ts:136](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L136)
+[types.ts:199](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L199)
 
 ___
 
@@ -143,7 +177,7 @@ ___
 
 #### Defined in
 
-[types.ts:141](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L141)
+[types.ts:204](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L204)
 
 ___
 
@@ -153,7 +187,7 @@ ___
 
 #### Defined in
 
-[types.ts:139](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L139)
+[types.ts:202](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L202)
 
 ___
 
@@ -163,7 +197,7 @@ ___
 
 #### Defined in
 
-[types.ts:147](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L147)
+[types.ts:210](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L210)
 
 ___
 
@@ -173,7 +207,7 @@ ___
 
 #### Defined in
 
-[types.ts:140](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L140)
+[types.ts:203](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L203)
 
 ___
 
@@ -183,4 +217,14 @@ ___
 
 #### Defined in
 
-[types.ts:137](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L137)
+[types.ts:200](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L200)
+
+___
+
+### withdrawalsRoot
+
+• `Optional` **withdrawalsRoot**: `string`
+
+#### Defined in
+
+[types.ts:215](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L215)

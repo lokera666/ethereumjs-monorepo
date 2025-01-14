@@ -1,14 +1,20 @@
+/* eslint-disable no-console */
 import { Block } from '@ethereumjs/block'
-import { Blockchain } from '@ethereumjs/blockchain'
-import { DefaultStateManager } from '@ethereumjs/statemanager'
-import { Trie } from '@ethereumjs/trie'
-import { toBuffer } from '@ethereumjs/util'
+import { createBlockchain } from '@ethereumjs/blockchain'
+import { type InterpreterStep } from '@ethereumjs/evm'
+import { MerklePatriciaTrie } from '@ethereumjs/mpt'
+import { Caches, MerkleStateManager } from '@ethereumjs/statemanager'
+import {
+  Account,
+  bytesToHex,
+  createAddressFromString,
+  equalsBytes,
+  toBytes,
+} from '@ethereumjs/util'
 
-import { EVM } from '../../../../evm/src'
-import { EEI } from '../../../src'
-import { makeBlockFromEnv, makeTx, setupPreConditions } from '../../util'
+import { createVM, runTx } from '../../../src/index.js'
+import { makeBlockFromEnv, makeTx, setupPreConditions } from '../../util.js'
 
-import type { InterpreterStep } from '@ethereumjs/evm/dist//interpreter'
 import type * as tape from 'tape'
 
 function parseTestCases(
@@ -16,7 +22,7 @@ function parseTestCases(
   testData: any,
   data: string | undefined,
   gasLimit: string | undefined,
-  value: string | undefined
+  value: string | undefined,
 ) {
   let testCases = []
 
@@ -66,28 +72,34 @@ function parseTestCases(
 }
 
 async function runTestCase(options: any, testData: any, t: tape.Test) {
-  let VM
-  if (options.dist === true) {
-    ;({ VM } = require('../../../dist'))
-  } else {
-    ;({ VM } = require('../../../src'))
-  }
   const begin = Date.now()
-  const common = options.common
-
+  // Copy the common object to not create long-lasting
+  // references in memory which might prevent GC
+  const common = options.common.copy()
   // Have to create a blockchain with empty block as genesisBlock for Merge
   // Otherwise mainnet genesis will throw since this has difficulty nonzero
-  const genesisBlock = new Block(undefined, undefined, undefined, { common })
-  const blockchain = await Blockchain.create({ genesisBlock, common })
-  const state = new Trie({ useKeyHashing: true })
-  const stateManager = new DefaultStateManager({
+  const genesisBlock = new Block(undefined, undefined, undefined, undefined, { common })
+  const blockchain = await createBlockchain({ genesisBlock, common })
+  const state = new MerklePatriciaTrie({ useKeyHashing: true, common })
+  const stateManager = new MerkleStateManager({
+    caches: new Caches(),
     trie: state,
+    common,
   })
-  const eei = new EEI(stateManager, common, blockchain)
-  const evm = new EVM({ common, eei })
-  const vm = await VM.create({ state, stateManager, common, blockchain, evm })
 
-  await setupPreConditions(vm.eei, testData)
+  const evmOpts = {
+    bls: options.bls,
+    bn254: options.bn254,
+  }
+  const vm = await createVM({
+    stateManager,
+    common,
+    blockchain,
+    evmOpts,
+    profilerOpts: { reportAfterTx: options.profile },
+  })
+
+  await setupPreConditions(vm.stateManager, testData)
 
   let execInfo = ''
   let tx
@@ -95,43 +107,57 @@ async function runTestCase(options: any, testData: any, t: tape.Test) {
   try {
     tx = makeTx(testData.transaction, { common })
   } catch (e: any) {
+    console.log('error: ', e)
+    console.log('testData.transaction: ', testData.transaction)
     execInfo = 'tx instantiation exception'
   }
 
+  // Even if no txs are ran, coinbase should always be created
+  const coinbaseAddress = createAddressFromString(testData.env.currentCoinbase)
+  const account = await vm.stateManager.getAccount(coinbaseAddress)
+  await vm.evm.journal.putAccount(coinbaseAddress, account ?? new Account())
+
+  const stepHandler = (e: InterpreterStep, resolve: any) => {
+    let hexStack = []
+    hexStack = e.stack.map((item: bigint) => {
+      return '0x' + item.toString(16)
+    })
+
+    const opTrace = {
+      pc: e.pc,
+      op: e.opcode.name,
+      gas: '0x' + e.gasLeft.toString(16),
+      gasCost: '0x' + e.opcode.fee.toString(16),
+      stack: hexStack,
+      depth: e.depth,
+      opName: e.opcode.name,
+    }
+
+    t.comment(JSON.stringify(opTrace))
+    resolve?.()
+  }
+
+  const afterTxHandler = async (_: any, resolve: any) => {
+    const stateRoot = {
+      stateRoot: bytesToHex(await vm.stateManager.getStateRoot()),
+    }
+    t.comment(JSON.stringify(stateRoot))
+    resolve?.()
+  }
+
   if (tx) {
-    if (tx.validate()) {
+    if (tx.isValid()) {
       const block = makeBlockFromEnv(testData.env, { common })
 
       if (options.jsontrace === true) {
-        vm.evm.events.on('step', function (e: InterpreterStep) {
-          let hexStack = []
-          hexStack = e.stack.map((item: bigint) => {
-            return '0x' + item.toString(16)
-          })
-
-          const opTrace = {
-            pc: e.pc,
-            op: e.opcode.name,
-            gas: '0x' + e.gasLeft.toString(16),
-            gasCost: '0x' + e.opcode.fee.toString(16),
-            stack: hexStack,
-            depth: e.depth,
-            opName: e.opcode.name,
-          }
-
-          t.comment(JSON.stringify(opTrace))
-        })
-        vm.events.on('afterTx', async () => {
-          const stateRoot = {
-            stateRoot: vm.stateManager._trie.root.toString('hex'),
-          }
-          t.comment(JSON.stringify(stateRoot))
-        })
+        vm.evm.events!.on('step', stepHandler)
+        vm.events.on('afterTx', afterTxHandler)
       }
       try {
-        await vm.runTx({ tx, block })
+        await runTx(vm, { tx, block })
         execInfo = 'successful tx run'
       } catch (e: any) {
+        console.log(e)
         execInfo = `tx runtime error :${e.message}`
       }
     } else {
@@ -139,14 +165,25 @@ async function runTestCase(options: any, testData: any, t: tape.Test) {
     }
   }
 
-  const stateManagerStateRoot = vm.stateManager._trie.root()
-  const testDataPostStateRoot = toBuffer(testData.postStateRoot)
-  const stateRootsAreEqual = stateManagerStateRoot.equals(testDataPostStateRoot)
+  // Cleanup touched accounts (this wipes coinbase if it is empty on HFs >= TangerineWhistle)
+  await vm.evm.journal.cleanup()
+
+  const stateManagerStateRoot = await vm.stateManager.getStateRoot() // Ensure state root is updated (flush all changes to trie)
+  const testDataPostStateRoot = toBytes(testData.postStateRoot)
+  const stateRootsAreEqual = equalsBytes(stateManagerStateRoot, testDataPostStateRoot)
 
   const end = Date.now()
   const timeSpent = `${(end - begin) / 1000} secs`
 
   t.ok(stateRootsAreEqual, `[ ${timeSpent} ] the state roots should match (${execInfo})`)
+
+  vm.evm.events!.removeListener('step', stepHandler)
+  vm.events.removeListener('afterTx', afterTxHandler)
+
+  // @ts-ignore Explicitly delete objects for memory optimization (early GC)
+  // TODO FIXME
+  //common = blockchain = state = stateManager = evm = vm = null // eslint-disable-line
+
   return parseFloat(timeSpent)
 }
 
@@ -157,7 +194,7 @@ export async function runStateTest(options: any, testData: any, t: tape.Test) {
       testData,
       options.data,
       options.gasLimit,
-      options.value
+      options.value,
     )
     if (testCases.length === 0) {
       t.comment(`No ${options.forkConfigTestSuite} post state defined, skip test`)

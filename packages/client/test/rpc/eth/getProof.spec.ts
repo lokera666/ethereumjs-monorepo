@@ -1,13 +1,15 @@
-import { Block } from '@ethereumjs/block'
-import { Blockchain } from '@ethereumjs/blockchain'
-import { Chain, Common, Hardfork } from '@ethereumjs/common'
-import { Transaction } from '@ethereumjs/tx'
-import { Address, bigIntToHex } from '@ethereumjs/util'
-import * as tape from 'tape'
+import { createBlock } from '@ethereumjs/block'
+import { createBlockchain } from '@ethereumjs/blockchain'
+import { Mainnet, createCustomCommon } from '@ethereumjs/common'
+import { createLegacyTx } from '@ethereumjs/tx'
+import { bigIntToHex, createAddressFromString } from '@ethereumjs/util'
+import { runBlock } from '@ethereumjs/vm'
+import { assert, describe, it } from 'vitest'
 
-import { baseRequest, createClient, createManager, params, startRPC } from '../helpers'
+import { createClient, createManager, getRPCClient, startRPC } from '../helpers.js'
 
-import type { FullEthereumService } from '../../../lib/service'
+import type { Block } from '@ethereumjs/block'
+import type { PrefixedHexString } from '@ethereumjs/util'
 
 const method = 'eth_getProof'
 
@@ -23,7 +25,7 @@ const expectedProof = {
   ],
   storageProof: [
     {
-      key: '0x0000000000000000000000000000000000000000000000000000000000000000',
+      key: '0x0',
       value: '0x04d2',
       proof: [
         '0xf8518080a036bb5f2fd6f99b186600638644e2f0396989955e201672f7e81e8c8f466ed5b9a010859880cfb38603690e8c4dfcc5595c203de6b901a503f944ef21a6120926a680808080808080808080808080',
@@ -33,28 +35,80 @@ const expectedProof = {
   ],
 }
 
-const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Istanbul })
+// Note: this is all added to ensure to run on Istanbul hardfork, and without a mainnet genesis state setup
+// Without this, the test will fail because the store() method uses SHR
+// Which is only available since Constantinople (and thus also in Istanbul)
+// Preserving to use Istanbul as hardfork as per the original test
+const testnetData = {
+  name: 'testnet2',
+  chainId: 12345,
+  defaultHardfork: 'istanbul',
+  consensus: {
+    type: 'pow',
+    algorithm: 'ethash',
+  },
+  genesis: {
+    gasLimit: 1000000,
+    difficulty: 1,
+    nonce: '0x0000000000000000' as PrefixedHexString,
+    extraData: '0x' as PrefixedHexString,
+  },
+  hardforks: [
+    {
+      name: 'chainstart',
+      block: 0,
+    },
+    {
+      name: 'homestead',
+      block: 0,
+    },
+    {
+      name: 'tangerineWhistle',
+      block: 0,
+    },
+    {
+      name: 'spuriousDragon',
+      block: 0,
+    },
+    {
+      name: 'byzantium',
+      block: 0,
+    },
+    {
+      name: 'constantinople',
+      block: 0,
+    },
+    {
+      name: 'istanbul',
+      block: 0,
+    },
+  ],
+  bootstrapNodes: [],
+}
 
-tape(`${method}: call with valid arguments`, async (t) => {
-  const blockchain = await Blockchain.create({
-    common,
-    validateBlocks: false,
-    validateConsensus: false,
-  })
+const common = createCustomCommon({ ...testnetData }, Mainnet)
 
-  const client = createClient({ blockchain, commonChain: common, includeVM: true })
-  const manager = createManager(client)
-  const server = startRPC(manager.getMethods())
+describe(method, async () => {
+  it('call with valid arguments', async () => {
+    const blockchain = await createBlockchain({
+      common,
+      validateBlocks: false,
+      validateConsensus: false,
+    })
 
-  const { execution } = client.services.find((s) => s.name === 'eth') as FullEthereumService
-  t.notEqual(execution, undefined, 'should have valid execution')
-  const { vm } = execution
+    const client = await createClient({ blockchain, commonChain: common, includeVM: true })
+    const manager = createManager(client)
+    const rpc = getRPCClient(startRPC(manager.getMethods()))
 
-  // genesis address with balance
-  const address = Address.fromString('0xccfd725760a68823ff1e062f4cc97e1360e8d997')
+    const { execution } = client.service
+    assert.notEqual(execution, undefined, 'should have valid execution')
+    const { vm } = execution
 
-  // contract inspired from https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getstorageat/
-  /*
+    // genesis address with balance
+    const address = createAddressFromString('0xccfd725760a68823ff1e062f4cc97e1360e8d997')
+
+    // contract inspired from https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_getstorageat/
+    /*
     // SPDX-License-Identifier: MIT
     pragma solidity ^0.7.4;
 
@@ -67,71 +121,68 @@ tape(`${method}: call with valid arguments`, async (t) => {
         }
     }
   */
-  const data =
-    '0x6080604052348015600f57600080fd5b5060bc8061001e6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063975057e714602d575b600080fd5b60336035565b005b6104d260008190555061162e600160003373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020019081526020016000208190555056fea2646970667358221220b16fe0abdbdcae31fa05c5717ebc442024b20fb637907d1a05547ea2d8ec8e5964736f6c63430007060033'
+    const data =
+      '0x6080604052348015600f57600080fd5b5060bc8061001e6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063975057e714602d575b600080fd5b60336035565b005b6104d260008190555061162e600160003373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020019081526020016000208190555056fea2646970667358221220b16fe0abdbdcae31fa05c5717ebc442024b20fb637907d1a05547ea2d8ec8e5964736f6c63430007060033'
 
-  // construct block with tx
-  const gasLimit = 2000000
-  const tx = Transaction.fromTxData({ gasLimit, data }, { common, freeze: false })
-  tx.getSenderAddress = () => {
-    return address
-  }
-  const parent = await blockchain.getCanonicalHeadHeader()
-  const block = Block.fromBlockData(
-    {
-      header: {
-        parentHash: parent.hash(),
-        number: 1,
-        gasLimit,
+    // construct block with tx
+    const gasLimit = 2000000
+    const tx = createLegacyTx({ gasLimit, data }, { common, freeze: false })
+    tx.getSenderAddress = () => {
+      return address
+    }
+    const parent = await blockchain.getCanonicalHeadHeader()
+    const block = createBlock(
+      {
+        header: {
+          parentHash: parent.hash(),
+          number: 1,
+          gasLimit,
+        },
       },
-    },
-    { common, calcDifficultyFromHeader: parent }
-  )
-  block.transactions[0] = tx
+      { common, calcDifficultyFromHeader: parent },
+    )
+    block.transactions[0] = tx
 
-  // deploy contract
-  let ranBlock: Block | undefined = undefined
-  vm.events.once('afterBlock', (result: any) => (ranBlock = result.block))
-  const result = await vm.runBlock({ block, generate: true, skipBlockValidation: true })
-  const { createdAddress } = result.results[0]
-  await vm.blockchain.putBlock(ranBlock!)
+    // deploy contract
+    let ranBlock: Block | undefined = undefined
+    vm.events.once('afterBlock', (result: any) => (ranBlock = result.block))
+    const result = await runBlock(vm, { block, generate: true, skipBlockValidation: true })
+    const { createdAddress } = result.results[0]
+    await vm.blockchain.putBlock(ranBlock!)
 
-  // call store() method
-  const funcHash = '975057e7' // store()
-  const storeTxData = {
-    to: createdAddress!.toString(),
-    from: address.toString(),
-    data: `0x${funcHash}`,
-    gasLimit: bigIntToHex(BigInt(530000)),
-    nonce: 1,
-  }
-  const storeTx = Transaction.fromTxData(storeTxData, { common, freeze: false })
-  storeTx.getSenderAddress = () => {
-    return address
-  }
-  const block2 = Block.fromBlockData(
-    {
-      header: {
-        parentHash: ranBlock!.hash(),
-        number: 2,
-        gasLimit,
+    // call store() method
+    const funcHash = '975057e7' // store()
+    const storeTxData = {
+      to: createdAddress!.toString(),
+      from: address.toString(),
+      data: `0x${funcHash}` as PrefixedHexString,
+      gasLimit: bigIntToHex(BigInt(530000)),
+      nonce: 1,
+    }
+    const storeTx = createLegacyTx(storeTxData, { common, freeze: false })
+    storeTx.getSenderAddress = () => {
+      return address
+    }
+    const block2 = createBlock(
+      {
+        header: {
+          parentHash: ranBlock!.hash(),
+          number: 2,
+          gasLimit,
+        },
       },
-    },
-    { common, calcDifficultyFromHeader: block.header }
-  )
-  block2.transactions[0] = storeTx
+      { common, calcDifficultyFromHeader: block.header },
+    )
+    block2.transactions[0] = storeTx
 
-  // run block
-  let ranBlock2: Block | undefined = undefined
-  vm.events.once('afterBlock', (result: any) => (ranBlock2 = result.block))
-  await vm.runBlock({ block: block2, generate: true, skipBlockValidation: true })
-  await vm.blockchain.putBlock(ranBlock2!)
+    // run block
+    let ranBlock2: Block | undefined = undefined
+    vm.events.once('afterBlock', (result: any) => (ranBlock2 = result.block))
+    await runBlock(vm, { block: block2, generate: true, skipBlockValidation: true })
+    await vm.blockchain.putBlock(ranBlock2!)
 
-  // verify proof is accurate
-  const req = params(method, [createdAddress!.toString(), ['0x0'], 'latest'])
-  const expectRes = (res: any) => {
-    const msg = 'should return the correct proof'
-    t.deepEqual(res.body.result, expectedProof, msg)
-  }
-  await baseRequest(t, server, req, 200, expectRes)
+    // verify proof is accurate
+    const res = await rpc.request(method, [createdAddress!.toString(), ['0x0'], 'latest'])
+    assert.deepEqual(res.result, expectedProof, 'should return the correct proof')
+  })
 })

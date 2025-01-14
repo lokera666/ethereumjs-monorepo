@@ -1,78 +1,60 @@
-import * as tape from 'tape'
+import { assert, describe, it } from 'vitest'
 
-import { Memory } from '../src/memory'
+import { Memory } from '../src/memory.js'
 
-tape('Memory', (t) => {
+const CONTAINER_SIZE = 8192
+
+describe('Memory', () => {
   const m = new Memory()
-  t.test('should have 0 capacity initially', (st) => {
-    st.equal(m._store.length, 0)
-    st.end()
+  it('should have CONTAINER_SIZE capacity initially', () => {
+    assert.equal(m._store.length, CONTAINER_SIZE)
   })
 
-  t.test('should return zeros from empty memory', (st) => {
-    st.ok(m.read(0, 3).equals(Buffer.from([0, 0, 0])))
-    st.end()
+  it('should return zeros from empty memory', () => {
+    assert.deepEqual(m.read(0, 3), Uint8Array.from([0, 0, 0]))
   })
 
-  t.test('should extend capacity to word boundary', (st) => {
-    m.extend(0, 3)
-    st.equal(m._store.length, 32)
-    st.end()
+  it('should extend capacity to CONTAINER_SIZE + CONTAINER_SIZE bytes', () => {
+    m.extend(CONTAINER_SIZE, 3)
+    assert.equal(m._store.length, CONTAINER_SIZE * 2)
   })
 
-  t.test('should return zeros before writing', (st) => {
-    st.ok(m.read(0, 2).equals(Buffer.from([0, 0])))
-    st.end()
+  it('should return zeros before writing', () => {
+    assert.deepEqual(m.read(0, 2), Uint8Array.from([0, 0]))
   })
 
-  t.test('should write value', (st) => {
-    m.write(29, 3, Buffer.from([1, 2, 3]))
-    st.ok(m.read(29, 5).equals(Buffer.from([1, 2, 3, 0, 0])))
-    st.end()
+  it('should write value', () => {
+    m.write(29, 3, Uint8Array.from([1, 2, 3]))
+    assert.deepEqual(m.read(29, 5), Uint8Array.from([1, 2, 3, 0, 0]))
   })
 
-  t.test('should fail when value len and size are inconsistent', (st) => {
-    st.throws(() => m.write(0, 5, Buffer.from([8, 8, 8])), /size/)
-    st.end()
+  it('should fail when value len and size are inconsistent', () => {
+    assert.throws(() => m.write(0, 5, Uint8Array.from([8, 8, 8])), /size/)
   })
 
-  t.test(
-    'should expand by word (32 bytes) properly when writing to previously untouched location',
-    (st) => {
-      const memory = new Memory()
-      memory.write(0, 1, Buffer.from([1]))
-      st.equal(memory._store.length, 32)
-
-      memory.write(1, 3, Buffer.from([2, 2, 2]))
-      st.equal(memory._store.length, 32)
-
-      memory.write(4, 32, Buffer.allocUnsafe(32).fill(3))
-      st.equal(memory._store.length, 64)
-
-      memory.write(36, 32, Buffer.allocUnsafe(32).fill(4))
-      st.equal(memory._store.length, 96)
-
-      st.end()
-    }
-  )
-
-  t.test('should expand by word (32 bytes) when reading a previously untouched location', (st) => {
+  it('should expand by container (8192 bytes) properly when writing to previously untouched location', () => {
     const memory = new Memory()
-    memory.read(0, 8)
-    st.equal(memory._store.length, 32)
+    memory.write(0, CONTAINER_SIZE, new Uint8Array(CONTAINER_SIZE))
+    assert.equal(
+      memory._store.length,
+      CONTAINER_SIZE,
+      'memory should remain in CONTAINER_SIZE length',
+    )
+    memory.write(CONTAINER_SIZE, 1, Uint8Array.from([1]))
+    assert.equal(
+      memory._store.length,
+      8192 * 2,
+      'memory buffer length expanded by CONTAINER_SIZE bytes',
+    )
+  })
 
-    memory.read(1, 16)
-    st.equal(memory._store.length, 32)
+  it('should expand by container (8192 bytes) when reading a previously untouched location', () => {
+    const memory = new Memory()
+    memory.write(0, CONTAINER_SIZE, new Uint8Array(CONTAINER_SIZE))
+    memory.read(CONTAINER_SIZE, 8)
+    assert.equal(memory._store.length, CONTAINER_SIZE * 2)
 
-    memory.read(1, 32)
-    st.equal(memory._store.length, 64)
-
-    memory.read(32, 32)
-    st.equal(memory._store.length, 64)
-
-    memory.read(33, 32)
-    st.equal(memory._store.length, 96)
-
-    st.end()
+    memory.read(CONTAINER_SIZE - 2, 8193)
+    assert.equal(memory._store.length, 16384)
   })
 })
