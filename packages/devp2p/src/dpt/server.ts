@@ -1,95 +1,85 @@
-import { debug as createDebugLogger } from 'debug'
+import { bytesToHex, bytesToUnprefixedHex } from '@ethereumjs/util'
+import debugDefault from 'debug'
 import * as dgram from 'dgram'
-import { EventEmitter } from 'events'
-import LRUCache = require('lru-cache')
-import ms = require('ms')
+import { EventEmitter } from 'eventemitter3'
+import { LRUCache } from 'lru-cache'
 
-import { createDeferred, devp2pDebug, formatLogId, keccak256, pk2id } from '../util'
+import { createDeferred, devp2pDebug, formatLogId, pk2id } from '../util.js'
 
-import { decode, encode } from './message'
+import { decode, encode } from './message.js'
 
-import type { DPT, PeerInfo } from './dpt'
+import type { DPTServerOptions, PeerInfo, ServerEvent } from '../types.js'
+import type { DPT } from './dpt.js'
+import type { Common } from '@ethereumjs/common'
 import type { Debugger } from 'debug'
 import type { Socket as DgramSocket, RemoteInfo } from 'dgram'
 
 const DEBUG_BASE_NAME = 'dpt:server'
-const verbose = createDebugLogger('verbose').enabled
+const verbose = debugDefault('verbose').enabled
 
 const VERSION = 0x04
 
-export interface DPTServerOptions {
-  /**
-   * Timeout for peer requests
-   *
-   * Default: 10s
-   */
-  timeout?: number
+export class Server {
+  public events: EventEmitter<ServerEvent>
+  protected _dpt: DPT
+  protected _privateKey: Uint8Array
+  protected _timeout: number
+  protected _endpoint: PeerInfo
+  protected _requests: Map<string, any>
+  protected _requestsCache: LRUCache<string, Promise<any>>
+  protected _socket: DgramSocket | null
+  private _debug: Debugger
 
-  /**
-   * Network info to send a long a request
-   *
-   * Default: 0.0.0.0, no UDP or TCP port provided
-   */
-  endpoint?: PeerInfo
+  protected _common?: Common
 
-  /**
-   * Function for socket creation
-   *
-   * Default: dgram-created socket
-   */
-  createSocket?: Function
-}
+  private DEBUG: boolean
 
-export class Server extends EventEmitter {
-  _dpt: DPT
-  _privateKey: Buffer
-  _timeout: number
-  _endpoint: PeerInfo
-  _requests: Map<string, any>
-  _parityRequestMap: Map<string, string>
-  _requestsCache: LRUCache<string, Promise<any>>
-  _socket: DgramSocket | null
-  _debug: Debugger
-
-  constructor(dpt: DPT, privateKey: Buffer, options: DPTServerOptions) {
-    super()
-
+  constructor(dpt: DPT, privateKey: Uint8Array, options: DPTServerOptions) {
+    this.events = new EventEmitter<ServerEvent>()
     this._dpt = dpt
     this._privateKey = privateKey
 
-    this._timeout = options.timeout ?? ms('10s')
+    this._timeout = options.timeout ?? 4000 // 4 * 1000
     this._endpoint = options.endpoint ?? { address: '0.0.0.0', udpPort: null, tcpPort: null }
     this._requests = new Map()
-    this._parityRequestMap = new Map()
-    this._requestsCache = new LRUCache({ max: 1000, maxAge: ms('1s'), stale: false })
+    this._requestsCache = new LRUCache({ max: 1000, ttl: 1000 }) // 1 sec * 1000
 
     const createSocket = options.createSocket ?? dgram.createSocket.bind(null, { type: 'udp4' })
     this._socket = createSocket()
     this._debug = devp2pDebug.extend(DEBUG_BASE_NAME)
     if (this._socket) {
-      this._socket.once('listening', () => this.emit('listening'))
-      this._socket.once('close', () => this.emit('close'))
-      this._socket.on('error', (err) => this.emit('error', err))
-      this._socket.on('message', (msg: Buffer, rinfo: RemoteInfo) => {
+      this._socket.once('listening', () => this.events.emit('listening'))
+      this._socket.once('close', () => this.events.emit('close'))
+      this._socket.on('error', (err) => this.events.emit('error', err))
+      this._socket.on('message', (msg: Uint8Array, rinfo: RemoteInfo) => {
         try {
           this._handler(msg, rinfo)
         } catch (err: any) {
-          this.emit('error', err)
+          this.events.emit('error', err)
         }
       })
     }
+
+    this._common = options.common
+
+    this.DEBUG =
+      typeof window === 'undefined' ? (process?.env?.DEBUG?.includes('ethjs') ?? false) : false
   }
 
   bind(...args: any[]) {
     this._isAliveCheck()
-    this._debug('call .bind')
+    if (this.DEBUG) {
+      this._debug('call .bind')
+    }
 
     if (this._socket) this._socket.bind(...args)
   }
 
   destroy(...args: any[]) {
     this._isAliveCheck()
-    this._debug('call .destroy')
+    if (this.DEBUG) {
+      this._debug('call .destroy')
+    }
 
     if (this._socket) {
       this._socket.close(...args)
@@ -100,8 +90,8 @@ export class Server extends EventEmitter {
   async ping(peer: PeerInfo): Promise<any> {
     this._isAliveCheck()
 
-    const rckey = `${peer.address}:${peer.udpPort}`
-    const promise = this._requestsCache.get(rckey)
+    const rcKey = `${peer.address}:${peer.udpPort}`
+    const promise = this._requestsCache.get(rcKey)
     if (promise !== undefined) return promise
 
     const hash = this._send(peer, 'ping', {
@@ -111,29 +101,31 @@ export class Server extends EventEmitter {
     })
 
     const deferred = createDeferred()
-    const rkey = hash.toString('hex')
-    this._requests.set(rkey, {
+    const rKey = bytesToUnprefixedHex(hash)
+    this._requests.set(rKey, {
       peer,
       deferred,
       timeoutId: setTimeout(() => {
-        if (this._requests.get(rkey) !== undefined) {
-          this._debug(
-            `ping timeout: ${peer.address}:${peer.udpPort} ${
-              peer.id ? formatLogId(peer.id.toString('hex'), verbose) : '-'
-            }`
-          )
-          this._requests.delete(rkey)
+        if (this._requests.get(rKey) !== undefined) {
+          if (this.DEBUG) {
+            this._debug(
+              `ping timeout: ${peer.address}:${peer.udpPort} ${
+                peer.id ? formatLogId(bytesToHex(peer.id), verbose) : '-'
+              }`,
+            )
+          }
+          this._requests.delete(rKey)
           deferred.reject(new Error(`Timeout error: ping ${peer.address}:${peer.udpPort}`))
         } else {
           return deferred.promise
         }
       }, this._timeout),
     })
-    this._requestsCache.set(rckey, deferred.promise)
+    this._requestsCache.set(rcKey, deferred.promise)
     return deferred.promise
   }
 
-  findneighbours(peer: PeerInfo, id: Buffer) {
+  findneighbours(peer: PeerInfo, id: Uint8Array) {
     this._isAliveCheck()
     this._send(peer, 'findneighbours', { id })
   }
@@ -143,43 +135,39 @@ export class Server extends EventEmitter {
   }
 
   _send(peer: PeerInfo, typename: string, data: any) {
-    const debugMsg = `send ${typename} to ${peer.address}:${peer.udpPort} (peerId: ${
-      peer.id ? formatLogId(peer.id.toString('hex'), verbose) : '-'
-    })`
-    this.debug(typename, debugMsg)
-
-    const msg = encode(typename, data, this._privateKey)
-    // Parity hack
-    // There is a bug in Parity up to at lease 1.8.10 not echoing the hash from
-    // discovery spec (hash: sha3(signature || packet-type || packet-data))
-    // but just hashing the RLP-encoded packet data (see discovery.rs, on_ping())
-    // 2018-02-28
-    if (typename === 'ping') {
-      const rkeyParity = keccak256(msg.slice(98)).toString('hex')
-      this._parityRequestMap.set(rkeyParity, msg.slice(0, 32).toString('hex'))
-      setTimeout(() => {
-        if (this._parityRequestMap.get(rkeyParity) !== undefined) {
-          this._parityRequestMap.delete(rkeyParity)
-        }
-      }, this._timeout)
+    if (this.DEBUG) {
+      this.debug(
+        typename,
+        `send ${typename} to ${peer.address}:${peer.udpPort} (peerId: ${
+          peer.id ? formatLogId(bytesToHex(peer.id), verbose) : '-'
+        })`,
+      )
     }
+
+    const msg = encode(typename, data, this._privateKey, this._common)
+
     if (this._socket && typeof peer.udpPort === 'number')
       this._socket.send(msg, 0, msg.length, peer.udpPort, peer.address)
-    return msg.slice(0, 32) // message id
+    return msg.subarray(0, 32) // message id
   }
 
-  _handler(msg: Buffer, rinfo: RemoteInfo) {
-    const info = decode(msg)
+  _handler(msg: Uint8Array, rinfo: RemoteInfo) {
+    const info = decode(msg, this._common) // Dgram serializes everything to `Uint8Array`
     const peerId = pk2id(info.publicKey)
-    const debugMsg = `received ${info.typename} from ${rinfo.address}:${
-      rinfo.port
-    } (peerId: ${formatLogId(peerId.toString('hex'), verbose)})`
-    this.debug(info.typename.toString(), debugMsg)
+    if (this.DEBUG) {
+      this.debug(
+        info.typename.toString(),
+        `received ${info.typename} from ${rinfo.address}:${rinfo.port} (peerId: ${formatLogId(
+          bytesToHex(peerId),
+          verbose,
+        )})`,
+      )
+    }
 
     // add peer if not in our table
     const peer = this._dpt.getPeer(peerId)
     if (peer === null && info.typename === 'ping' && info.data.from.udpPort !== null) {
-      setTimeout(() => this.emit('peers', [info.data.from]), ms('100ms'))
+      setTimeout(() => this.events.emit('peers', [info.data.from]), 100) // 100 ms
     }
 
     switch (info.typename) {
@@ -195,21 +183,16 @@ export class Server extends EventEmitter {
             udpPort: rinfo.port,
             tcpPort: info.data.from.tcpPort,
           },
-          hash: msg.slice(0, 32),
+          hash: msg.subarray(0, 32),
         })
         break
       }
 
       case 'pong': {
-        let rkey = info.data.hash.toString('hex')
-        const rkeyParity = this._parityRequestMap.get(rkey)
-        if (typeof rkeyParity === 'string') {
-          rkey = rkeyParity
-          this._parityRequestMap.delete(rkeyParity)
-        }
-        const request = this._requests.get(rkey)
+        const rKey = bytesToUnprefixedHex(info.data.hash)
+        const request = this._requests.get(rKey)
         if (request !== undefined) {
-          this._requests.delete(rkey)
+          this._requests.delete(rKey)
           request.deferred.resolve({
             id: peerId,
             address: request.peer.address,
@@ -232,9 +215,9 @@ export class Server extends EventEmitter {
       }
 
       case 'neighbours': {
-        this.emit(
+        this.events.emit(
           'peers',
-          info.data.peers.map((peer: any) => peer.endpoint)
+          info.data.peers.map((peer: any) => peer.endpoint),
         )
         break
       }

@@ -1,60 +1,41 @@
-import { Blockchain } from '@ethereumjs/blockchain'
-import { Chain, Common } from '@ethereumjs/common'
-import { EVM, getActivePrecompiles } from '@ethereumjs/evm'
-import { DefaultStateManager } from '@ethereumjs/statemanager'
-import { Account, Address, AsyncEventEmitter, TypeOutput, toType } from '@ethereumjs/util'
-import { promisify } from 'util'
+import { createEVM } from '@ethereumjs/evm'
+import { EventEmitter } from 'eventemitter3'
 
-import { buildBlock } from './buildBlock'
-import { EEI } from './eei/eei'
-import { runBlock } from './runBlock'
-import { runTx } from './runTx'
+import { createVM } from './constructors.js'
+import { paramsVM } from './params.js'
 
-import type { BlockBuilder } from './buildBlock'
-import type {
-  BuildBlockOpts,
-  RunBlockOpts,
-  RunBlockResult,
-  RunTxOpts,
-  RunTxResult,
-  VMEvents,
-  VMOpts,
-} from './types'
-import type { BlockchainInterface } from '@ethereumjs/blockchain'
-import type { EEIInterface, EVMInterface } from '@ethereumjs/evm'
-import type { StateManager } from '@ethereumjs/statemanager'
+import type { VMEvent, VMOpts } from './types.js'
+import type { Common, StateManagerInterface } from '@ethereumjs/common'
+import type { EVMInterface, EVMMockBlockchainInterface } from '@ethereumjs/evm'
+import type { BigIntLike } from '@ethereumjs/util'
 
 /**
  * Execution engine which can be used to run a blockchain, individual
  * blocks, individual transactions, or snippets of EVM bytecode.
- *
- * This class is an AsyncEventEmitter, please consult the README to learn how to use it.
  */
 export class VM {
   /**
    * The StateManager used by the VM
    */
-  readonly stateManager: StateManager
+  readonly stateManager: StateManagerInterface
 
   /**
    * The blockchain the VM operates on
    */
-  readonly blockchain: BlockchainInterface
+  readonly blockchain: EVMMockBlockchainInterface
 
-  readonly _common: Common
+  readonly common: Common
 
-  readonly events: AsyncEventEmitter<VMEvents>
+  readonly events: EventEmitter<VMEvent>
   /**
    * The EVM used for bytecode execution
    */
   readonly evm: EVMInterface
-  readonly eei: EEIInterface
 
   protected readonly _opts: VMOpts
   protected _isInitialized: boolean = false
 
-  protected readonly _hardforkByBlockNumber: boolean
-  protected readonly _hardforkByTTD?: bigint
+  protected readonly _setHardfork: boolean | BigIntLike
 
   /**
    * Cached emit() function, not for public usage
@@ -74,186 +55,76 @@ export class VM {
   readonly DEBUG: boolean = false
 
   /**
-   * VM async constructor. Creates engine instance and initializes it.
-   *
-   * @param opts VM engine constructor options
-   */
-  static async create(opts: VMOpts = {}): Promise<VM> {
-    const vm = new this(opts)
-    await vm.init()
-    return vm
-  }
-
-  /**
    * Instantiates a new {@link VM} Object.
    *
    * @deprecated The direct usage of this constructor is discouraged since
    * non-finalized async initialization might lead to side effects. Please
-   * use the async {@link VM.create} constructor instead (same API).
+   * use the async {@link createVM} constructor instead (same API).
    * @param opts
    */
-  protected constructor(opts: VMOpts = {}) {
-    this.events = new AsyncEventEmitter<VMEvents>()
+  constructor(opts: VMOpts = {}) {
+    this.common = opts.common!
+    this.common.updateParams(opts.params ?? paramsVM)
+    this.stateManager = opts.stateManager!
+    this.blockchain = opts.blockchain!
+    this.evm = opts.evm!
 
+    this.events = new EventEmitter<VMEvent>()
+
+    this._emit = async (topic: string, data: any): Promise<void> => {
+      const listeners = this.events.listeners(topic as keyof VMEvent)
+      for (const listener of listeners) {
+        if (listener.length === 2) {
+          await new Promise<void>((resolve) => {
+            listener(data, resolve)
+          })
+        } else {
+          listener(data)
+        }
+      }
+    }
     this._opts = opts
 
-    if (opts.common) {
-      this._common = opts.common
-    } else {
-      const DEFAULT_CHAIN = Chain.Mainnet
-      this._common = new Common({ chain: DEFAULT_CHAIN })
-    }
+    this._setHardfork = opts.setHardfork ?? false
 
-    if (opts.stateManager) {
-      this.stateManager = opts.stateManager
-    } else {
-      this.stateManager = new DefaultStateManager({})
-    }
-
-    this.blockchain = opts.blockchain ?? new (Blockchain as any)({ common: this._common })
-
-    // TODO tests
-    if (opts.eei) {
-      if (opts.evm) {
-        throw new Error('cannot specify EEI if EVM opt provided')
-      }
-      this.eei = opts.eei
-    } else {
-      if (opts.evm) {
-        this.eei = opts.evm.eei
-      } else {
-        this.eei = new EEI(this.stateManager, this._common, this.blockchain)
-      }
-    }
-
-    // TODO tests
-    if (opts.evm) {
-      this.evm = opts.evm
-    } else {
-      this.evm = new EVM({
-        common: this._common,
-        eei: this.eei,
-      })
-    }
-
-    if (opts.hardforkByBlockNumber !== undefined && opts.hardforkByTTD !== undefined) {
-      throw new Error(
-        `The hardforkByBlockNumber and hardforkByTTD options can't be used in conjunction`
-      )
-    }
-
-    this._hardforkByBlockNumber = opts.hardforkByBlockNumber ?? false
-    this._hardforkByTTD = toType(opts.hardforkByTTD, TypeOutput.BigInt)
-
-    // We cache this promisified function as it's called from the main execution loop, and
-    // promisifying each time has a huge performance impact.
-    this._emit = <(topic: string, data: any) => Promise<void>>(
-      promisify(this.events.emit.bind(this.events))
-    )
-
-    // Safeguard if "process" is not available (browser)
-    if (process !== undefined && typeof process.env.DEBUG !== 'undefined') {
-      this.DEBUG = true
-    }
-  }
-
-  async init(): Promise<void> {
-    if (this._isInitialized) return
-    if (typeof (<any>this.blockchain)._init === 'function') {
-      await (this.blockchain as any)._init()
-    }
-
-    if (!this._opts.stateManager) {
-      if (this._opts.activateGenesisState === true) {
-        if (typeof (<any>this.blockchain).genesisState === 'function') {
-          await this.eei.generateCanonicalGenesis((<any>this.blockchain).genesisState())
-        } else {
-          throw new Error(
-            'cannot activate genesis state: blockchain object has no `genesisState` method'
-          )
-        }
-      }
-    }
-
-    if (this._opts.activatePrecompiles === true && typeof this._opts.stateManager === 'undefined') {
-      await this.eei.checkpoint()
-      // put 1 wei in each of the precompiles in order to make the accounts non-empty and thus not have them deduct `callNewAccount` gas.
-      for (const [addressStr] of getActivePrecompiles(this._common)) {
-        const address = new Address(Buffer.from(addressStr, 'hex'))
-        const account = await this.eei.getAccount(address)
-        // Only do this if it is not overridden in genesis
-        // Note: in the case that custom genesis has storage fields, this is preserved
-        if (account.isEmpty()) {
-          const newAccount = Account.fromAccountData({
-            balance: 1,
-            storageRoot: account.storageRoot,
-          })
-          await this.eei.putAccount(address, newAccount)
-        }
-      }
-      await this.eei.commit()
-    }
-    this._isInitialized = true
-  }
-
-  /**
-   * Processes the `block` running all of the transactions it contains and updating the miner's account
-   *
-   * This method modifies the state. If `generate` is `true`, the state modifications will be
-   * reverted if an exception is raised. If it's `false`, it won't revert if the block's header is
-   * invalid. If an error is thrown from an event handler, the state may or may not be reverted.
-   *
-   * @param {RunBlockOpts} opts - Default values for options:
-   *  - `generate`: false
-   */
-  async runBlock(opts: RunBlockOpts): Promise<RunBlockResult> {
-    return runBlock.bind(this)(opts)
-  }
-
-  /**
-   * Process a transaction. Run the vm. Transfers eth. Checks balances.
-   *
-   * This method modifies the state. If an error is thrown, the modifications are reverted, except
-   * when the error is thrown from an event handler. In the latter case the state may or may not be
-   * reverted.
-   *
-   * @param {RunTxOpts} opts
-   */
-  async runTx(opts: RunTxOpts): Promise<RunTxResult> {
-    return runTx.bind(this)(opts)
-  }
-
-  /**
-   * Build a block on top of the current state
-   * by adding one transaction at a time.
-   *
-   * Creates a checkpoint on the StateManager and modifies the state
-   * as transactions are run. The checkpoint is committed on {@link BlockBuilder.build}
-   * or discarded with {@link BlockBuilder.revert}.
-   *
-   * @param {BuildBlockOpts} opts
-   * @returns An instance of {@link BlockBuilder} with methods:
-   * - {@link BlockBuilder.addTransaction}
-   * - {@link BlockBuilder.build}
-   * - {@link BlockBuilder.revert}
-   */
-  async buildBlock(opts: BuildBlockOpts): Promise<BlockBuilder> {
-    return buildBlock.bind(this)(opts)
+    // Skip DEBUG calls unless 'ethjs' included in environmental DEBUG variables
+    // Additional window check is to prevent vite browser bundling (and potentially other) to break
+    this.DEBUG =
+      typeof window === 'undefined' ? (process?.env?.DEBUG?.includes('ethjs') ?? false) : false
   }
 
   /**
    * Returns a copy of the {@link VM} instance.
+   *
+   * Note that the returned copy will share the same db as the original for the blockchain and the statemanager.
+   *
+   * Associated caches will be deleted and caches will be re-initialized for a more short-term focused
+   * usage, being less memory intense (the statemanager caches will switch to using an ORDERED_MAP cache
+   * data structure more suitable for short-term usage, the trie node LRU cache will not be activated at all).
+   * To fine-tune this behavior (if the shallow-copy-returned object has a longer life span e.g.) you can set
+   * the `downlevelCaches` option to `false`.
+   *
+   * @param downlevelCaches Downlevel (so: adopted for short-term usage) associated state caches (default: true)
    */
-  async copy(): Promise<VM> {
-    const evmCopy = this.evm.copy()
-    const eeiCopy: EEIInterface = evmCopy.eei
-    return VM.create({
-      stateManager: (eeiCopy as any)._stateManager,
-      blockchain: (eeiCopy as any)._blockchain,
-      common: (eeiCopy as any)._common,
+  async shallowCopy(downlevelCaches = true): Promise<VM> {
+    const common = this.common.copy()
+    common.setHardfork(this.common.hardfork())
+    const blockchain = this.blockchain.shallowCopy()
+    const stateManager = this.stateManager.shallowCopy(downlevelCaches)
+    const evmOpts = {
+      ...(this.evm as any)._optsCached,
+      common: this._opts.evmOpts?.common?.copy() ?? common,
+      blockchain: this._opts.evmOpts?.blockchain?.shallowCopy() ?? blockchain,
+      stateManager: this._opts.evmOpts?.stateManager?.shallowCopy(downlevelCaches) ?? stateManager,
+    }
+    const evmCopy = await createEVM(evmOpts) // TODO fixme (should copy the EVMInterface, not default EVM)
+    return createVM({
+      stateManager,
+      blockchain: this.blockchain,
+      common,
       evm: evmCopy,
-      hardforkByBlockNumber: this._hardforkByBlockNumber ? true : undefined,
-      hardforkByTTD: this._hardforkByTTD,
+      setHardfork: this._setHardfork,
+      profilerOpts: this._opts.profilerOpts,
     })
   }
 
@@ -263,7 +134,7 @@ export class VM {
   errorStr() {
     let hf = ''
     try {
-      hf = this._common.hardfork()
+      hf = this.common.hardfork()
     } catch (e: any) {
       hf = 'error'
     }

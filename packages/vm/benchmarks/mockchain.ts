@@ -9,15 +9,15 @@ export class Mockchain {
   async _init() {}
 
   getBlock(num: bigint): any {
-    const bhash = this._hashes[num.toString()]
+    const bHash = this._hashes[num.toString()]
     return {
       hash() {
-        return bhash
+        return bHash
       },
     }
   }
 
-  putBlockHash(num: bigint, hash: Buffer): void {
+  putBlockHash(num: bigint, hash: Uint8Array): void {
     this._hashes[num.toString()] = hash
   }
 }

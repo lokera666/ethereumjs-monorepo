@@ -1,137 +1,135 @@
-import { Chain, Common, Hardfork } from '@ethereumjs/common'
-import { Transaction } from '@ethereumjs/tx'
-import * as tape from 'tape'
+import { Common, Hardfork, Mainnet } from '@ethereumjs/common'
+import { createLegacyTx } from '@ethereumjs/tx'
+import { hexToBytes } from '@ethereumjs/util'
+import { assert, describe, it } from 'vitest'
 
-import { VM } from '../../../src/vm'
+import { createVM, runTx } from '../../../src/index.js'
 
-import type { InterpreterStep } from '@ethereumjs/evm/dist/interpreter'
 import type { Address } from '@ethereumjs/util'
 
-const pkey = Buffer.from('20'.repeat(32), 'hex')
+const pkey = hexToBytes(`0x${'20'.repeat(32)}`)
 
-tape('EIP 3541 tests', (t) => {
-  const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Berlin, eips: [3541] })
-  const commonNoEIP3541 = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Berlin, eips: [] })
+describe('EIP 3541 tests', () => {
+  const common = new Common({ chain: Mainnet, hardfork: Hardfork.Berlin, eips: [3541] })
+  const commonNoEIP3541 = new Common({ chain: Mainnet, hardfork: Hardfork.Berlin, eips: [] })
 
-  t.test('deposit 0xEF code if 3541 is active', async (st) => {
+  it('deposit 0xEF code if 3541 is active', async () => {
     // put 0xEF contract
-    const tx = Transaction.fromTxData({
+    const tx = createLegacyTx({
       data: '0x7FEF0000000000000000000000000000000000000000000000000000000000000060005260206000F3',
       gasLimit: 1000000,
     }).sign(pkey)
 
-    let vm = await VM.create({ common })
+    let vm = await createVM({ common })
 
-    let result = await vm.runTx({ tx })
+    let result = await runTx(vm, { tx, skipHardForkValidation: true })
     let created = result.createdAddress
 
-    let code = await vm.stateManager.getContractCode(created!)
+    let code = await vm.stateManager.getCode(created!)
 
-    st.equal(code.length, 0, 'did not deposit code')
+    assert.equal(code.length, 0, 'did not deposit code')
 
     // Test if we can put a valid contract
 
     // put a valid contract starting with SELFDESTRUCT
-    const tx1 = Transaction.fromTxData({
+    const tx1 = createLegacyTx({
       data: '0x7FFF0000000000000000000000000000000000000000000000000000000000000060005260206000F3',
       gasLimit: 1000000,
       nonce: 1,
     }).sign(pkey)
 
-    result = await vm.runTx({ tx: tx1 })
+    result = await runTx(vm, { tx: tx1, skipHardForkValidation: true })
     created = result.createdAddress
 
-    code = await vm.stateManager.getContractCode(created!)
+    code = await vm.stateManager.getCode(created!)
 
-    st.ok(code.length > 0, 'did deposit code')
+    assert.ok(code.length > 0, 'did deposit code')
 
     // check if we can deposit a contract on non-EIP3541 chains
 
-    vm = await VM.create({ common: commonNoEIP3541 })
-    const tx2 = Transaction.fromTxData({
+    vm = await createVM({ common: commonNoEIP3541 })
+    const tx2 = createLegacyTx({
       data: '0x7FEF0000000000000000000000000000000000000000000000000000000000000060005260206000F3',
       gasLimit: 1000000,
     }).sign(pkey)
 
-    result = await vm.runTx({ tx: tx2 })
+    result = await runTx(vm, { tx: tx2, skipHardForkValidation: true })
     created = result.createdAddress
 
-    code = await vm.stateManager.getContractCode(created!)
+    code = await vm.stateManager.getCode(created!)
 
-    st.ok(code.length > 0, 'did deposit code')
-
-    st.end()
+    assert.ok(code.length > 0, 'did deposit code')
   })
 
-  t.test('deploy contracts starting with 0xEF using CREATE', async (st) => {
+  it('deploy contracts starting with 0xEF using CREATE', async () => {
     // put 0xEF contract
-    const tx = Transaction.fromTxData({
+    const tx = createLegacyTx({
       data: '0x7F60EF60005360016000F300000000000000000000000000000000000000000000600052602060006000F000',
       gasLimit: 1000000,
     }).sign(pkey)
 
-    const vm = await VM.create({ common })
+    const vm = await createVM({ common })
     let address: Address
-    vm.evm.events!.on('step', (step: InterpreterStep) => {
+    vm.evm.events!.on('step', (step, resolve) => {
       if (step.depth === 1) {
         address = step.address
       }
+      resolve?.()
     })
 
-    await vm.runTx({ tx })
+    await runTx(vm, { tx, skipHardForkValidation: true })
 
-    let code = await vm.stateManager.getContractCode(address!)
+    let code = await vm.stateManager.getCode(address!)
 
-    st.equal(code.length, 0, 'did not deposit code')
+    assert.equal(code.length, 0, 'did not deposit code')
 
     // put 0xFF contract
-    const tx1 = Transaction.fromTxData({
+    const tx1 = createLegacyTx({
       data: '0x7F60FF60005360016000F300000000000000000000000000000000000000000000600052602060006000F000',
       gasLimit: 1000000,
       nonce: 1,
     }).sign(pkey)
 
-    await vm.runTx({ tx: tx1 })
+    await runTx(vm, { tx: tx1, skipHardForkValidation: true })
 
-    code = await vm.stateManager.getContractCode(address!)
+    code = await vm.stateManager.getCode(address!)
 
-    st.ok(code.length > 0, 'did deposit code')
-    st.end()
+    assert.ok(code.length > 0, 'did deposit code')
   })
 
-  t.test('deploy contracts starting with 0xEF using CREATE2', async (st) => {
+  it('deploy contracts starting with 0xEF using CREATE2', async () => {
     // put 0xEF contract
-    const tx = Transaction.fromTxData({
+    const tx = createLegacyTx({
       data: '0x7F60EF60005360016000F3000000000000000000000000000000000000000000006000526000602060006000F500',
       gasLimit: 1000000,
     }).sign(pkey)
 
-    const vm = await VM.create({ common })
+    const vm = await createVM({ common })
     let address: Address
-    vm.evm.events!.on('step', (step: InterpreterStep) => {
+    vm.evm.events!.on('step', (step, resolve) => {
       if (step.depth === 1) {
         address = step.address
       }
+      resolve?.()
     })
 
-    await vm.runTx({ tx })
+    await runTx(vm, { tx, skipHardForkValidation: true })
 
-    let code = await vm.stateManager.getContractCode(address!)
+    let code = await vm.stateManager.getCode(address!)
 
-    st.equal(code.length, 0, 'did not deposit code')
+    assert.equal(code.length, 0, 'did not deposit code')
 
     // put 0xFF contract
-    const tx1 = Transaction.fromTxData({
+    const tx1 = createLegacyTx({
       data: '0x7F60FF60005360016000F3000000000000000000000000000000000000000000006000526000602060006000F500',
       gasLimit: 1000000,
       nonce: 1,
     }).sign(pkey)
 
-    await vm.runTx({ tx: tx1 })
+    await runTx(vm, { tx: tx1, skipHardForkValidation: true })
 
-    code = await vm.stateManager.getContractCode(address!)
+    code = await vm.stateManager.getCode(address!)
 
-    st.ok(code.length > 0, 'did deposit code')
-    st.end()
+    assert.ok(code.length > 0, 'did deposit code')
   })
 })

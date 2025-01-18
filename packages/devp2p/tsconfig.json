@@ -1,8 +1,16 @@
 {
   "extends": "../../config/tsconfig.json",
-  "include": ["src/**/*.ts", "test/**/*.ts", "examples/**/*.ts"],
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "examples/**/*.ts",
+    "scripts/**/*.ts",
+    "examples/simple.ts",
+    "examples/peer-communication.ts",
+    "examples/peer-communication-les.ts",
+    "scripts/singlePeerRun.ts"
+  ],
   "compilerOptions": {
-    "baseUrl": ".",
     "typeRoots": ["node_modules/@types", "src/@types"]
   }
 }

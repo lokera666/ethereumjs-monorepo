@@ -40,7 +40,7 @@
 
 | Name | Type |
 | :------ | :------ |
-| `cacheDB?` | [`EthashCacheDB`](../README.md#ethashcachedb) |
+| `cacheDB?` | `DB`<`number`, `DBObject`\> |
 
 #### Defined in
 
@@ -50,7 +50,7 @@
 
 ### cache
 
-• **cache**: `Buffer`[]
+• **cache**: `Uint8Array`[]
 
 #### Defined in
 
@@ -60,7 +60,7 @@ ___
 
 ### cacheDB
 
-• `Optional` **cacheDB**: [`EthashCacheDB`](../README.md#ethashcachedb)
+• `Optional` **cacheDB**: `DB`<`number`, `DBObject`\>
 
 #### Defined in
 
@@ -110,7 +110,7 @@ ___
 
 ### seed
 
-• `Optional` **seed**: `Buffer`
+• `Optional` **seed**: `Uint8Array`
 
 #### Defined in
 
@@ -134,27 +134,27 @@ ___
 
 #### Defined in
 
-[index.ts:341](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L341)
+[index.ts:369](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L369)
 
 ___
 
 ### cacheHash
 
-▸ **cacheHash**(): `Buffer`
+▸ **cacheHash**(): `Uint8Array`
 
 #### Returns
 
-`Buffer`
+`Uint8Array`
 
 #### Defined in
 
-[index.ts:250](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L250)
+[index.ts:257](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L257)
 
 ___
 
 ### calcDatasetItem
 
-▸ **calcDatasetItem**(`i`): `Buffer`
+▸ **calcDatasetItem**(`i`): `Uint8Array`
 
 #### Parameters
 
@@ -164,11 +164,11 @@ ___
 
 #### Returns
 
-`Buffer`
+`Uint8Array`
 
 #### Defined in
 
-[index.ts:198](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L198)
+[index.ts:197](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L197)
 
 ___
 
@@ -193,27 +193,27 @@ To mine a `BlockHeader` or `Block`, use the one-liner `await ethash.getMiner(blo
 
 #### Defined in
 
-[index.ts:337](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L337)
+[index.ts:365](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L365)
 
 ___
 
 ### headerHash
 
-▸ **headerHash**(`rawHeader`): `Buffer`
+▸ **headerHash**(`rawHeader`): `Uint8Array`
 
 #### Parameters
 
 | Name | Type |
 | :------ | :------ |
-| `rawHeader` | `Buffer`[] |
+| `rawHeader` | `Uint8Array`[] |
 
 #### Returns
 
-`Buffer`
+`Uint8Array`
 
 #### Defined in
 
-[index.ts:254](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L254)
+[index.ts:272](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L272)
 
 ___
 
@@ -235,24 +235,24 @@ Loads the seed and cache given a block number.
 
 #### Defined in
 
-[index.ts:261](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L261)
+[index.ts:279](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L279)
 
 ___
 
 ### mkcache
 
-▸ **mkcache**(`cacheSize`, `seed`): `Buffer`[]
+▸ **mkcache**(`cacheSize`, `seed`): `Uint8Array`[]
 
 #### Parameters
 
 | Name | Type |
 | :------ | :------ |
 | `cacheSize` | `number` |
-| `seed` | `Buffer` |
+| `seed` | `Uint8Array` |
 
 #### Returns
 
-`Buffer`[]
+`Uint8Array`[]
 
 #### Defined in
 
@@ -268,8 +268,8 @@ ___
 
 | Name | Type |
 | :------ | :------ |
-| `val` | `Buffer` |
-| `nonce` | `Buffer` |
+| `val` | `Uint8Array` |
+| `nonce` | `Uint8Array` |
 | `fullSize?` | `number` |
 
 #### Returns
@@ -278,8 +278,8 @@ ___
 
 | Name | Type |
 | :------ | :------ |
-| `hash` | `Buffer` |
-| `mix` | `Buffer` |
+| `hash` | `Uint8Array` |
+| `mix` | `Uint8Array` |
 
 #### Defined in
 
@@ -303,4 +303,4 @@ ___
 
 #### Defined in
 
-[index.ts:352](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L352)
+[index.ts:379](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/ethash/src/index.ts#L379)
