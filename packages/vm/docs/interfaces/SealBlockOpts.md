@@ -15,24 +15,24 @@ Options for sealing a block.
 
 ### mixHash
 
-• `Optional` **mixHash**: `Buffer`
+• `Optional` **mixHash**: `Uint8Array`
 
 For PoW, the mixHash.
 Overrides the value passed in the constructor.
 
 #### Defined in
 
-[packages/vm/src/types.ts:195](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L195)
+[vm/src/types.ts:210](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L210)
 
 ___
 
 ### nonce
 
-• `Optional` **nonce**: `Buffer`
+• `Optional` **nonce**: `Uint8Array`
 
 For PoW, the nonce.
 Overrides the value passed in the constructor.
 
 #### Defined in
 
-[packages/vm/src/types.ts:189](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L189)
+[vm/src/types.ts:204](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L204)

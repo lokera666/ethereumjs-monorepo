@@ -1,12 +1,22 @@
-import type { Bloom } from './bloom'
+import type { Bloom } from './bloom/index.js'
 import type { Block, BlockOptions, HeaderData } from '@ethereumjs/block'
-import type { BlockchainInterface } from '@ethereumjs/blockchain'
-import type { Common } from '@ethereumjs/common'
-import type { EEIInterface, EVMInterface, EVMResult, Log } from '@ethereumjs/evm'
-import type { StateManager } from '@ethereumjs/statemanager'
+import type { Common, ParamsDict, StateManagerInterface } from '@ethereumjs/common'
+import type {
+  EVMInterface,
+  EVMMockBlockchainInterface,
+  EVMOpts,
+  EVMResult,
+  Log,
+} from '@ethereumjs/evm'
 import type { AccessList, TypedTransaction } from '@ethereumjs/tx'
-import type { BigIntLike } from '@ethereumjs/util'
-export type TxReceipt = PreByzantiumTxReceipt | PostByzantiumTxReceipt
+import type {
+  BigIntLike,
+  CLRequest,
+  CLRequestType,
+  PrefixedHexString,
+  WithdrawalData,
+} from '@ethereumjs/util'
+export type TxReceipt = PreByzantiumTxReceipt | PostByzantiumTxReceipt | EIP4844BlobTxReceipt
 
 /**
  * Abstract interface with common transaction receipt fields
@@ -19,7 +29,7 @@ export interface BaseTxReceipt {
   /**
    * Bloom bitvector
    */
-  bitvector: Buffer
+  bitvector: Uint8Array
   /**
    * Logs emitted
    */
@@ -34,7 +44,7 @@ export interface PreByzantiumTxReceipt extends BaseTxReceipt {
   /**
    * Intermediary state root
    */
-  stateRoot: Buffer
+  stateRoot: Uint8Array
 }
 
 /**
@@ -43,16 +53,44 @@ export interface PreByzantiumTxReceipt extends BaseTxReceipt {
  */
 export interface PostByzantiumTxReceipt extends BaseTxReceipt {
   /**
-   * Status of transaction, `1` if successful, `0` if an exception occured
+   * Status of transaction, `1` if successful, `0` if an exception occurred
    */
   status: 0 | 1
 }
 
-export type VMEvents = {
+export interface EIP4844BlobTxReceipt extends PostByzantiumTxReceipt {
+  /**
+   * blob gas consumed by a transaction
+   *
+   * Note: This value is not included in the receiptRLP used for encoding the receiptsRoot in a block
+   * and is only provided as part of receipt metadata.
+   */
+  blobGasUsed: bigint
+  /**
+   * blob gas price for block transaction was included in
+   *
+   * Note: This values is not included in the `receiptRLP` used for encoding the `receiptsRoot` in a block
+   * and is only provided as part of receipt metadata.
+   */
+  blobGasPrice: bigint
+}
+
+export type EVMProfilerOpts = {
+  enabled: boolean
+  // extra options here (such as use X hardfork for gas)
+}
+
+export type VMEvent = {
   beforeBlock: (data: Block, resolve?: (result?: any) => void) => void
   afterBlock: (data: AfterBlockEvent, resolve?: (result?: any) => void) => void
   beforeTx: (data: TypedTransaction, resolve?: (result?: any) => void) => void
   afterTx: (data: AfterTxEvent, resolve?: (result?: any) => void) => void
+}
+
+export type VMProfilerOpts = {
+  //evmProfilerOpts: EVMProfilerOpts
+  reportAfterTx?: boolean
+  reportAfterBlock?: boolean
 }
 
 /**
@@ -66,7 +104,7 @@ export interface VMOpts {
    * ### Possible Values
    *
    * - `chain`: all chains supported by `Common` or a custom chain
-   * - `hardfork`: `mainnet` hardforks up to the `Merge` hardfork
+   * - `hardfork`: `mainnet` hardforks up to the `Paris` hardfork
    * - `eips`: `2537` (usage e.g. `eips: [ 2537, ]`)
    *
    * Note: check the associated `@ethereumjs/evm` instance options
@@ -77,18 +115,18 @@ export interface VMOpts {
    * Default setup if no `Common` instance is provided:
    *
    * - `chain`: `mainnet`
-   * - `hardfork`: `merge`
+   * - `hardfork`: `paris`
    * - `eips`: `[]`
    */
   common?: Common
   /**
    * A {@link StateManager} instance to use as the state store
    */
-  stateManager?: StateManager
+  stateManager?: StateManagerInterface
   /**
    * A {@link Blockchain} object for storing/retrieving blocks
    */
-  blockchain?: BlockchainInterface
+  blockchain?: EVMMockBlockchainInterface
   /**
    * If true, create entries in the state tree for the precompiled contracts, saving some gas the
    * first time each of them is called.
@@ -103,42 +141,49 @@ export interface VMOpts {
    * Default: `false`
    */
   activatePrecompiles?: boolean
-  /**
-   * If true, the state of the VM will add the genesis state given by {@link Blockchain.genesisState} to a newly
-   * created state manager instance. Note that if stateManager option is also passed as argument
-   * this flag won't have any effect.
-   *
-   * Default: `false`
-   */
-  activateGenesisState?: boolean
 
   /**
-   * Select hardfork based upon block number. This automatically switches to the right hard fork based upon the block number.
+   * Set the hardfork either by timestamp (for HFs from Shanghai onwards) or by block number
+   * for older Hfs.
    *
-   * Default: `false`
+   * Additionally it is possible to pass in a specific TD value to support live-Merge-HF
+   * transitions. Note that this should only be needed in very rare and specific scenarios.
+   *
+   * Default: `false` (HF is set to whatever default HF is set by the {@link Common} instance)
    */
-  hardforkByBlockNumber?: boolean
+  setHardfork?: boolean | BigIntLike
   /**
-   * Select the HF by total difficulty (Merge HF)
+   * VM parameters sorted by EIP can be found in the exported `paramsVM` dictionary,
+   * which is internally passed to the associated `@ethereumjs/common` instance which
+   * manages parameter selection based on the hardfork and EIP settings.
    *
-   * This option is a superset of `hardforkByBlockNumber` (so only use one of both options)
-   * and determines the HF by both the block number and the TD.
+   * This option allows providing a custom set of parameters. Note that parameters
+   * get fully overwritten, so you need to extend the default parameter dict
+   * to provide the full parameter set.
    *
-   * Since the TD is only a threshold the block number will in doubt take precedence (imagine
-   * e.g. both Merge and Shanghai HF blocks set and the block number from the block provided
-   * pointing to a Shanghai block: this will lead to set the HF as Shanghai and not the Merge).
+   * It is recommended to deep-clone the params object for this to avoid side effects:
+   *
+   * ```ts
+   * const params = JSON.parse(JSON.stringify(paramsVM))
+   * params['1559']['elasticityMultiplier'] = 10 // 2
+   * ```
    */
-  hardforkByTTD?: BigIntLike
-
-  /**
-   * Use a custom EEI for the EVM. If this is not present, use the default EEI.
-   */
-  eei?: EEIInterface
+  params?: ParamsDict
 
   /**
    * Use a custom EVM to run Messages on. If this is not present, use the default EVM.
    */
   evm?: EVMInterface
+
+  /**
+   * Often there is no need to provide a full custom EVM but only a few options need to be
+   * adopted. This option allows to provide a custom set of EVM options to be passed.
+   *
+   * Note: This option will throw if used in conjunction with a full custom EVM passed.
+   */
+  evmOpts?: EVMOpts
+
+  profilerOpts?: VMProfilerOpts
 }
 
 /**
@@ -155,6 +200,11 @@ export interface BuilderOpts extends BlockOptions {
    * Default: true
    */
   putBlockIntoBlockchain?: boolean
+  /**
+   * Provide a clique signer's privateKey to seal this block.
+   * Will throw if provided on a non-PoA chain.
+   */
+  cliqueSigner?: Uint8Array
 }
 
 /**
@@ -172,6 +222,7 @@ export interface BuildBlockOpts {
    */
   headerData?: HeaderData
 
+  withdrawals?: WithdrawalData[]
   /**
    * The block and builder options to use.
    */
@@ -186,13 +237,13 @@ export interface SealBlockOpts {
    * For PoW, the nonce.
    * Overrides the value passed in the constructor.
    */
-  nonce?: Buffer
+  nonce?: Uint8Array
 
   /**
    * For PoW, the mixHash.
    * Overrides the value passed in the constructor.
    */
-  mixHash?: Buffer
+  mixHash?: Uint8Array
 }
 
 /**
@@ -206,7 +257,15 @@ export interface RunBlockOpts {
   /**
    * Root of the state trie
    */
-  root?: Buffer
+  root?: Uint8Array
+  /**
+   * Clearing the StateManager cache.
+   *
+   * If state root is not reset for whatever reason this can be set to `false` for better performance.
+   *
+   * Default: true
+   */
+  clearCache?: boolean
   /**
    * Whether to generate the stateRoot and other related fields.
    * If `true`, `runBlock` will set the fields `stateRoot`, `receiptTrie`, `gasUsed`, and `bloom` (logs bloom) after running the block.
@@ -214,12 +273,23 @@ export interface RunBlockOpts {
    * Defaults to `false`.
    */
   generate?: boolean
+
+  /**
+   * The stateRoot of the parent. Used for verifying the witness proofs in the context of Verkle.
+   */
+  parentStateRoot?: Uint8Array
+
   /**
    * If true, will skip "Block validation":
    * Block validation validates the header (with respect to the blockchain),
    * the transactions, the transaction trie and the uncle hash.
    */
   skipBlockValidation?: boolean
+  /**
+   * If true, skips the hardfork validation of vm, block
+   * and tx
+   */
+  skipHardForkValidation?: boolean
   /**
    * if true, will skip "Header validation"
    * If the block has been picked from the blockchain to be executed,
@@ -237,15 +307,36 @@ export interface RunBlockOpts {
    */
   skipBalance?: boolean
   /**
-   * For merge transition support, pass the chain TD up to the block being run
+   * Set the hardfork either by timestamp (for HFs from Shanghai onwards) or by block number
+   * for older Hfs.
+   *
+   * Default: `false` (HF is set to whatever default HF is set by the {@link Common} instance)
    */
-  hardforkByTTD?: bigint
+  setHardfork?: boolean
+
+  /**
+   * If true, adds a hashedKey -> preimages mapping of all touched accounts
+   * to the `RunTxResult` returned.
+   */
+  reportPreimages?: boolean
 }
 
 /**
- * Result of {@link runBlock}
+ * Result of {@link applyBlock}
  */
-export interface RunBlockResult {
+export interface ApplyBlockResult {
+  /**
+   * The Bloom filter
+   */
+  bloom: Bloom
+  /**
+   * The gas used after executing the block
+   */
+  gasUsed: bigint
+  /**
+   * The receipt root after executing the block
+   */
+  receiptsRoot: Uint8Array
   /**
    * Receipts generated for transactions in the block
    */
@@ -255,21 +346,32 @@ export interface RunBlockResult {
    */
   results: RunTxResult[]
   /**
+   * Preimages mapping of the touched accounts from the block (see reportPreimages option)
+   */
+  preimages?: Map<PrefixedHexString, Uint8Array>
+}
+
+/**
+ * Result of {@link runBlock}
+ */
+export interface RunBlockResult extends Omit<ApplyBlockResult, 'bloom'> {
+  /**
    * The stateRoot after executing the block
    */
-  stateRoot: Buffer
-  /**
-   * The gas used after executing the block
-   */
-  gasUsed: bigint
+  stateRoot: Uint8Array
   /**
    * The bloom filter of the LOGs (events) after executing the block
    */
-  logsBloom: Buffer
+  logsBloom: Uint8Array
+
   /**
-   * The receipt root after executing the block
+   * The requestsHash for any CL requests in the block
    */
-  receiptsRoot: Buffer
+  requestsHash?: Uint8Array
+  /**
+   * Any CL requests that were processed in the course of this block
+   */
+  requests?: CLRequest<CLRequestType>[]
 }
 
 export interface AfterBlockEvent extends RunBlockResult {
@@ -294,6 +396,7 @@ export interface RunTxOpts {
    * If true, skips the nonce check
    */
   skipNonce?: boolean
+
   /**
    * Skip balance checks if true. Adds transaction cost to balance to ensure execution doesn't fail.
    */
@@ -306,6 +409,12 @@ export interface RunTxOpts {
   skipBlockGasLimitValidation?: boolean
 
   /**
+   * If true, skips the hardfork validation of vm, block
+   * and tx
+   */
+  skipHardForkValidation?: boolean
+
+  /**
    * If true, adds a generated EIP-2930 access list
    * to the `RunTxResult` returned.
    *
@@ -316,6 +425,12 @@ export interface RunTxOpts {
    * {@link StateManager.generateAccessList} must be implemented.
    */
   reportAccessList?: boolean
+
+  /**
+   * If true, adds a hashedKey -> preimages mapping of all touched accounts
+   * to the `RunTxResult` returned.
+   */
+  reportPreimages?: boolean
 
   /**
    * To obtain an accurate tx receipt input the block gas used up until this tx.
@@ -358,6 +473,21 @@ export interface RunTxResult extends EVMResult {
    * EIP-2930 access list generated for the tx (see `reportAccessList` option)
    */
   accessList?: AccessList
+
+  /**
+   * Preimages mapping of the touched accounts from the tx (see `reportPreimages` option)
+   */
+  preimages?: Map<PrefixedHexString, Uint8Array>
+
+  /**
+   * The value that accrues to the miner by this transaction
+   */
+  minerValue: bigint
+
+  /**
+   * This is the blob gas units times the fee per blob gas for 4844 transactions
+   */
+  blobGasUsed?: bigint
 }
 
 export interface AfterTxEvent extends RunTxResult {

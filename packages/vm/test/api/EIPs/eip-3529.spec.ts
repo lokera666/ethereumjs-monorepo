@@ -1,14 +1,14 @@
-import { Chain, Common, Hardfork } from '@ethereumjs/common'
-import { Transaction } from '@ethereumjs/tx'
-import { Address } from '@ethereumjs/util'
-import * as tape from 'tape'
+import { Common, Hardfork, Mainnet } from '@ethereumjs/common'
+import { createLegacyTx } from '@ethereumjs/tx'
+import { Account, Address, bytesToHex, hexToBytes } from '@ethereumjs/util'
+import { assert, describe, it } from 'vitest'
 
-import { VM } from '../../../src/vm'
+import { createVM, runTx } from '../../../src/index.js'
 
-import type { InterpreterStep } from '@ethereumjs/evm/dist/interpreter'
+import type { PrefixedHexString } from '@ethereumjs/util'
 
-const address = new Address(Buffer.from('11'.repeat(20), 'hex'))
-const pkey = Buffer.from('20'.repeat(32), 'hex')
+const address = new Address(hexToBytes(`0x${'11'.repeat(20)}`))
+const pkey = hexToBytes(`0x${'20'.repeat(32)}`)
 
 const testCases = [
   {
@@ -109,120 +109,121 @@ const testCases = [
   },
 ]
 
-tape('EIP-3529 tests', (t) => {
-  const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Berlin, eips: [3529] })
+describe('EIP-3529 tests', () => {
+  const common = new Common({ chain: Mainnet, hardfork: Hardfork.Berlin, eips: [3529] })
 
-  t.test('should verify EIP test cases', async (st) => {
-    const vm = await VM.create({ common })
+  it('should verify EIP test cases', async () => {
+    const vm = await createVM({ common })
 
     let gasRefund: bigint
     let gasLeft: bigint
-    vm.evm.events!.on('step', (step: InterpreterStep) => {
+    vm.evm.events!.on('step', (step, resolve) => {
       if (step.opcode.name === 'STOP') {
         gasRefund = step.gasRefund
         gasLeft = step.gasLeft
       }
+      resolve?.()
     })
 
     const gasLimit = BigInt(100000)
-    const key = Buffer.from('00'.repeat(32), 'hex')
+    const key = hexToBytes(`0x${'00'.repeat(32)}`)
 
     for (const testCase of testCases) {
-      const code = Buffer.from((testCase.code + '00').slice(2), 'hex') // add a STOP opcode (0 gas) so we can find the gas used / effective gas
+      const code = hexToBytes(`${testCase.code as PrefixedHexString}00`) // add a STOP opcode (0 gas) so we can find the gas used / effective gas
 
-      await vm.stateManager.putContractStorage(
+      await vm.stateManager.putAccount(address, new Account())
+      await vm.stateManager.putStorage(
         address,
         key,
-        Buffer.from(testCase.original.toString().padStart(64, '0'), 'hex')
+        hexToBytes(`0x${testCase.original.toString().padStart(64, '0')}`),
       )
 
-      await vm.stateManager.getContractStorage(address, key)
-      vm.eei.addWarmedStorage(address.toBuffer(), key)
+      await vm.stateManager.getStorage(address, key)
+      vm.evm.journal.addAlwaysWarmSlot(bytesToHex(address.bytes), bytesToHex(key))
 
       await vm.evm.runCode!({
         code,
-        address,
+        to: address,
         gasLimit,
       })
 
       const gasUsed = gasLimit - gasLeft!
       const effectiveGas = gasUsed - gasRefund!
-      st.equal(effectiveGas, BigInt(testCase.effectiveGas), 'correct effective gas')
-      st.equal(gasUsed, BigInt(testCase.usedGas), 'correct used gas')
+      assert.equal(effectiveGas, BigInt(testCase.effectiveGas), 'correct effective gas')
+      assert.equal(gasUsed, BigInt(testCase.usedGas), 'correct used gas')
 
       // clear the storage cache, otherwise next test will use current original value
-      vm.eei.clearOriginalStorageCache()
+      vm.stateManager.originalStorageCache.clear()
     }
-
-    st.end()
   })
 
-  t.test('should not refund selfdestructs', async (st) => {
-    const vm = await VM.create({ common })
+  it('should not refund selfdestructs', async () => {
+    const vm = await createVM({ common })
 
-    const tx = Transaction.fromTxData({
+    const tx = createLegacyTx({
       data: '0x6000ff',
       gasLimit: 100000,
     }).sign(pkey)
 
-    const result = await vm.runTx({
+    const result = await runTx(vm, {
       tx,
+      skipHardForkValidation: true,
     })
 
-    st.equal(result.execResult.exceptionError, undefined, 'transaction executed successfully')
-    st.equal(result.gasRefund, BigInt(0), 'gas refund is zero')
-    st.end()
+    assert.equal(result.execResult.exceptionError, undefined, 'transaction executed successfully')
+    assert.equal(result.gasRefund, BigInt(0), 'gas refund is zero')
   })
 
-  t.test('refunds are capped at 1/5 of the tx gas used', async (st) => {
+  it('refunds are capped at 1/5 of the tx gas used', async () => {
     /**
      * This test initializes a contract with slots 0-99 initialized to a nonzero value
      * Then, it resets all these 100 slots back to 0. This is to check if the
      * max gas refund is respected.
      */
-    const vm = await VM.create({ common })
+    const vm = await createVM({ common })
 
     let startGas: bigint
     let finalGas: bigint
-    vm.evm.events!.on('step', (step: InterpreterStep) => {
+    vm.evm.events!.on('step', (step, resolve) => {
       if (startGas === undefined) {
         startGas = step.gasLeft
       }
       if (step.opcode.name === 'STOP') {
         finalGas = step.gasLeft
       }
+      resolve?.()
     })
 
-    const address = new Address(Buffer.from('20'.repeat(20), 'hex'))
+    const address = new Address(hexToBytes(`0x${'20'.repeat(20)}`))
 
-    const value = Buffer.from('01'.repeat(32), 'hex')
+    const value = hexToBytes(`0x${'01'.repeat(32)}`)
 
-    let code = ''
+    let code: PrefixedHexString = '0x'
 
     for (let i = 0; i < 100; i++) {
-      const key = Buffer.from(i.toString(16).padStart(64, '0'), 'hex')
-      await vm.stateManager.putContractStorage(address, key, value)
+      const key = hexToBytes(`0x${i.toString(16).padStart(64, '0')}`)
+      await vm.stateManager.putAccount(address, new Account())
+      await vm.stateManager.putStorage(address, key, value)
       const hex = i.toString(16).padStart(2, '0')
       // push 0 push <hex> sstore
-      code += '600060' + hex + '55'
+      code = `${code}600060${hex}55`
     }
 
-    code += '00'
+    code = `${code}00`
 
-    await vm.stateManager.putContractCode(address, Buffer.from(code, 'hex'))
+    await vm.stateManager.putCode(address, hexToBytes(code))
 
-    const tx = Transaction.fromTxData({
+    const tx = createLegacyTx({
       to: address,
       gasLimit: 10000000,
     }).sign(pkey)
 
-    const result = await vm.runTx({ tx })
+    const result = await runTx(vm, { tx, skipHardForkValidation: true })
 
     const actualGasUsed = startGas! - finalGas! + BigInt(21000)
     const maxRefund = actualGasUsed / BigInt(5)
     const minGasUsed = actualGasUsed - maxRefund
-    st.ok(result.gasRefund! > maxRefund, 'refund is larger than the max refund')
-    st.ok(result.totalGasSpent >= minGasUsed, 'gas used respects the max refund quotient')
-    st.end()
+    assert.ok(result.gasRefund! > maxRefund, 'refund is larger than the max refund')
+    assert.ok(result.totalGasSpent >= minGasUsed, 'gas used respects the max refund quotient')
   })
 })

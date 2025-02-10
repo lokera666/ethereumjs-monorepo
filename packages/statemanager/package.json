@@ -1,11 +1,8 @@
 {
   "name": "@ethereumjs/statemanager",
-  "version": "1.0.1",
+  "version": "3.0.0-alpha.1",
   "description": "An Ethereum statemanager implementation",
-  "keywords": [
-    "ethereum",
-    "statemanager"
-  ],
+  "keywords": ["ethereum", "statemanager"],
   "homepage": "https://github.com/ethereumjs/ethereumjs-monorepo/tree/master/packages/statemanager#readme",
   "bugs": {
     "url": "https://github.com/ethereumjs/ethereumjs-monorepo/issues?q=is%3Aissue+label%3A%22package%3A+statemanager%22"
@@ -16,57 +13,49 @@
   },
   "license": "MPL-2.0",
   "author": "EthereumJS Team",
-  "contributors": [
-    "g11tech <gajinder@g11.in>"
-  ],
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "src"
-  ],
+  "contributors": ["g11tech <gajinder@g11.in>"],
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "files": ["dist", "src"],
   "scripts": {
+    "biome": "npx @biomejs/biome check",
+    "biome:fix": "npx @biomejs/biome check --write",
     "build": "../../config/cli/ts-build.sh",
     "clean": "../../config/cli/clean-package.sh",
-    "coverage": "../../config/cli/coverage.sh",
-    "docs:build": "typedoc --options typedoc.js",
-    "lint": "../../config/cli/lint.sh",
-    "lint:diff": "../../config/cli/lint-diff.sh",
-    "lint:fix": "../../config/cli/lint-fix.sh",
+    "coverage": "DEBUG=ethjs npx vitest run -c ../../config/vitest.config.coverage.mts",
+    "docs:build": "typedoc --options typedoc.cjs",
+    "examples": "tsx ../../scripts/examples-runner.ts -- statemanager",
+    "examples:build": "npx embedme README.md",
+    "lint": "npm run biome && eslint --config .eslintrc.cjs . --ext .js,.ts",
+    "lint:fix": "npm run biome:fix && eslint --fix --config .eslintrc.cjs . --ext .js,.ts",
     "prepublishOnly": "../../config/cli/prepublish.sh && npm run test:node",
-    "tape": "tape -r ts-node/register",
     "test": "npm run test:node && npm run test:browser",
-    "test:browser": "karma start karma.conf.js",
-    "test:node": "npm run tape -- test/*.spec.ts",
+    "test:browser": "npx vitest run --config=./vitest.config.browser.mts",
+    "test:node": "npx vitest run",
     "tsc": "../../config/cli/ts-compile.sh"
   },
   "dependencies": {
-    "@ethereumjs/common": "^3.0.1",
-    "@ethereumjs/rlp": "^4.0.0",
+    "@ethereumjs/common": "^5.0.0-alpha.1",
+    "@ethereumjs/rlp": "^6.0.0-alpha.1",
+    "@ethereumjs/mpt": "^7.0.0-alpha.1",
+    "@ethereumjs/util": "^10.0.0-alpha.1",
+    "@ethereumjs/verkle": "^0.2.0-alpha.1",
+    "@js-sdsl/ordered-map": "^4.4.2",
     "debug": "^4.3.3",
-    "ethereum-cryptography": "^1.1.2",
-    "ethers": "^5.7.1",
-    "js-sdsl": "^4.1.4"
+    "ethereum-cryptography": "^3.1.0",
+    "lru-cache": "10.1.0"
   },
   "devDependencies": {
-    "@ethereumjs/block": "^4.0.1",
-    "@ethereumjs/trie": "^5.0.1",
-    "@ethereumjs/util": "^8.0.2",
-    "@types/node": "^16.11.7",
-    "@types/tape": "^4.13.2",
-    "debug": "^4.3.3",
-    "eslint": "^8.0.0",
-    "ethereum-cryptography": "^1.1.2",
-    "functional-red-black-tree": "^1.0.1",
-    "karma": "^6.3.2",
-    "karma-chrome-launcher": "^3.1.0",
-    "karma-firefox-launcher": "^2.1.0",
-    "karma-tap": "^4.2.0",
-    "karma-typescript": "^5.5.3",
-    "nyc": "^15.1.0",
-    "standard": "^10.0.0",
-    "tape": "^5.3.1",
-    "ts-node": "^10.2.1",
-    "typescript": "^4.4.2"
+    "@ethereumjs/block": "^6.0.0-alpha.1",
+    "@ethereumjs/genesis": "^0.3.0-alpha.1",
+    "@types/debug": "^4.1.9"
   }
 }

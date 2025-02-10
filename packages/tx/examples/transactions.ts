@@ -1,14 +1,14 @@
 // This files contain examples on how to use this module.
-// You can run them with ts-node, as this project is developed in TypeScript.
-// Install the dependencies and run `npx ts-node examples/transactions.ts`
+// You can run them with tsx, as this project is developed in TypeScript.
+// Install the dependencies and run `npx tsx examples/transactions.ts`
 
-import { Transaction } from '../src'
-import { toBuffer } from '@ethereumjs/util'
+import { createLegacyTx, createLegacyTxFromBytesArray } from '@ethereumjs/tx'
+import { bytesToHex, hexToBytes, toBytes } from '@ethereumjs/util'
 
 // We create an unsigned transaction.
 // Notice we don't set the `to` field because we are creating a new contract.
 // This transaction's chain is set to mainnet.
-const tx = Transaction.fromTxData({
+const tx = createLegacyTx({
   nonce: 0,
   gasPrice: 100,
   gasLimit: 1000000000,
@@ -17,15 +17,12 @@ const tx = Transaction.fromTxData({
 })
 
 // We sign the transaction with this private key.
-const privateKey = Buffer.from(
-  'e331b6d69882b4cb4ea581d88e0b604039a3de5967688d3dcffdd2270c0fd109',
-  'hex'
-)
+const privateKey = hexToBytes('0xe331b6d69882b4cb4ea581d88e0b604039a3de5967688d3dcffdd2270c0fd109')
 
 const signedTx = tx.sign(privateKey)
 
 // We have a signed transaction.
-// Now for it to be fully fundable the account that we signed it with needs to have a certain amount of wei in to.
+// In order to send the transaction, the account that we signed it with needs to have a certain amount of wei in to.
 // To see how much this account needs we can use the getUpfrontCost() method.
 const feeCost = signedTx.getUpfrontCost()
 console.log('Total Amount of wei needed:' + feeCost.toString())
@@ -33,7 +30,7 @@ console.log('Total Amount of wei needed:' + feeCost.toString())
 // Lets serialize the transaction
 
 console.log('---Serialized TX----')
-console.log(signedTx.serialize().toString('hex'))
+console.log(bytesToHex(signedTx.serialize()))
 console.log('--------------------')
 
 // Parsing & Validating Transactions
@@ -53,7 +50,7 @@ const rawTx = [
   '0x5bd428537f05f9830e93792f90ea6a3e2d1ee84952dd96edbae9f658f831ab13',
 ]
 
-const tx2 = Transaction.fromValuesArray(rawTx.map(toBuffer)) // This is also a mainnet transaction
+const tx2 = createLegacyTxFromBytesArray(rawTx.map(toBytes)) // This is also a mainnet transaction
 
 // So assuming that you were able to parse the transaction, we will now get the sender's address.
 

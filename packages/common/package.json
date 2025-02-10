@@ -1,6 +1,6 @@
 {
   "name": "@ethereumjs/common",
-  "version": "3.0.1",
+  "version": "5.0.0-alpha.1",
   "description": "Resources common to all Ethereum implementations",
   "keywords": [
     "ethereum",
@@ -26,29 +26,40 @@
       "email": "Holger.Drewes@gmail.com"
     }
   ],
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "src"
-  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    }
+  },
+  "files": ["dist", "src"],
   "scripts": {
+    "biome": "npx @biomejs/biome check",
+    "biome:fix": "npx @biomejs/biome check --write",
     "build": "../../config/cli/ts-build.sh",
     "clean": "../../config/cli/clean-package.sh",
-    "coverage": "../../config/cli/coverage.sh",
-    "docs:build": "typedoc --options typedoc.js",
-    "lint": "../../config/cli/lint.sh",
-    "lint:diff": "../../config/cli/lint-diff.sh",
-    "lint:fix": "../../config/cli/lint-fix.sh",
+    "coverage": "DEBUG=ethjs npx vitest run -c ../../config/vitest.config.coverage.mts",
+    "docs:build": "typedoc --options typedoc.cjs",
+    "examples": "tsx ../../scripts/examples-runner.ts -- common",
+    "examples:build": "npx embedme README.md",
+    "lint": "npm run biome && eslint --config .eslintrc.cjs . --ext .js,.ts",
+    "lint:fix": "npm run biome:fix && eslint --fix --config .eslintrc.cjs . --ext .js,.ts",
     "prepublishOnly": "../../config/cli/prepublish.sh",
-    "tape": "tape -r ts-node/register",
     "test": "npm run test:node && npm run test:browser",
-    "test:browser": "karma start karma.conf.js",
-    "test:node": "npm run tape -- ./test/*.spec.ts",
+    "test:browser": "npx vitest run --config=../../config/vitest.config.browser.mts",
+    "test:node": "npx vitest run",
     "tsc": "../../config/cli/ts-compile.sh"
   },
   "dependencies": {
-    "@ethereumjs/util": "^8.0.2",
-    "crc-32": "^1.2.0"
+    "@ethereumjs/util": "^10.0.0-alpha.1",
+    "eventemitter3": "^5.0.1"
+  },
+  "devDependencies": {
+    "@polkadot/util": "^12.6.2",
+    "@polkadot/wasm-crypto": "^7.3.2"
   }
 }

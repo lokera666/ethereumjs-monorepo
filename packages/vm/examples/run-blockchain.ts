@@ -6,65 +6,44 @@
 // 4. Puts the blocks from ../utils/blockchain-mock-data "blocks" attribute into the Blockchain
 // 5. Runs the Blockchain on the VM.
 
-import { Account, Address, toBuffer, setLengthLeft } from '@ethereumjs/util'
-import { Block } from '@ethereumjs/block'
-import { Blockchain } from '@ethereumjs/blockchain'
-import { Common, ConsensusType } from '@ethereumjs/common'
-import { VM } from '../'
-import { testData } from './helpers/blockchain-mock-data'
+import { createBlock, createBlockFromRLP } from '@ethereumjs/block'
+import { EthashConsensus, createBlockchain } from '@ethereumjs/blockchain'
+import { Common, ConsensusAlgorithm, ConsensusType, Mainnet } from '@ethereumjs/common'
+import { Ethash } from '@ethereumjs/ethash'
+import {
+  Address,
+  bytesToHex,
+  createAccount,
+  hexToBytes,
+  setLengthLeft,
+  toBytes,
+} from '@ethereumjs/util'
+import { createVM, runBlock } from '@ethereumjs/vm'
 
-async function main() {
-  const common = new Common({ chain: 1, hardfork: testData.network.toLowerCase() })
-  const validatePow = common.consensusType() === ConsensusType.ProofOfWork
-  const validateBlocks = true
+import testData from './helpers/blockchain-mock-data.json'
 
-  const genesisBlock = Block.fromBlockData({ header: testData.genesisBlockHeader }, { common })
+import type { Block } from '@ethereumjs/block'
+import type { Blockchain, ConsensusDict } from '@ethereumjs/blockchain'
+import type { VM } from '@ethereumjs/vm'
 
-  const blockchain = await Blockchain.create({
-    common,
-    validateConsensus: validatePow,
-    validateBlocks,
-    genesisBlock,
-  })
-
-  const vm = await VM.create({ blockchain, common })
-
-  await setupPreConditions(vm, testData)
-
-  await putBlocks(blockchain, common, testData)
-
-  await blockchain.iterator('vm', async (block: Block, reorg: boolean) => {
-    const parentBlock = await blockchain!.getBlock(block.header.parentHash)
-    const parentState = parentBlock.header.stateRoot
-    // run block
-    await vm.runBlock({ block, root: parentState })
-  })
-
-  const blockchainHead = await vm.blockchain.getIteratorHead!()
-
-  console.log('--- Finished processing the Blockchain ---')
-  console.log('New head:', '0x' + blockchainHead.hash().toString('hex'))
-  console.log('Expected:', testData.lastblockhash)
-}
-
-async function setupPreConditions(vm: VM, data: typeof testData) {
+async function setupPreConditions(vm: VM, data: any) {
   await vm.stateManager.checkpoint()
 
   for (const [addr, acct] of Object.entries(data.pre)) {
-    const { nonce, balance, storage, code } = acct
+    const { nonce, balance, storage, code } = acct as any
 
-    const address = new Address(Buffer.from(addr.slice(2), 'hex'))
-    const account = Account.fromAccountData({ nonce, balance })
+    const address = new Address(hexToBytes(addr))
+    const account = createAccount({ nonce, balance })
     await vm.stateManager.putAccount(address, account)
 
     for (const [key, val] of Object.entries(storage)) {
-      const storageKey = setLengthLeft(Buffer.from(key, 'hex'), 32)
-      const storageVal = Buffer.from(val as string, 'hex')
-      await vm.stateManager.putContractStorage(address, storageKey, storageVal)
+      const storageKey = setLengthLeft(hexToBytes(key), 32)
+      const storageVal = hexToBytes(val as string)
+      await vm.stateManager.putStorage(address, storageKey, storageVal)
     }
 
-    const codeBuf = Buffer.from(code.slice(2), 'hex')
-    await vm.stateManager.putContractCode(address, codeBuf)
+    const codeBuf = hexToBytes('0x' + code)
+    await vm.stateManager.putCode(address, codeBuf)
   }
 
   await vm.stateManager.commit()
@@ -72,15 +51,47 @@ async function setupPreConditions(vm: VM, data: typeof testData) {
 
 async function putBlocks(blockchain: Blockchain, common: Common, data: typeof testData) {
   for (const blockData of data.blocks) {
-    const blockRlp = toBuffer(blockData.rlp)
-    const block = Block.fromRLPSerializedBlock(blockRlp, { common })
+    const blockRlp = toBytes(blockData.rlp)
+    const block = createBlockFromRLP(blockRlp, { common })
     await blockchain.putBlock(block)
   }
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error(err)
-    process.exit(1)
+async function main() {
+  const common = new Common({ chain: Mainnet, hardfork: testData.network.toLowerCase() })
+  const validatePow = common.consensusType() === ConsensusType.ProofOfWork
+  const validateBlocks = true
+
+  const genesisBlock = createBlock({ header: testData.genesisBlockHeader }, { common })
+
+  const consensusDict: ConsensusDict = {}
+  consensusDict[ConsensusAlgorithm.Ethash] = new EthashConsensus(new Ethash())
+  const blockchain = await createBlockchain({
+    common,
+    validateBlocks,
+    validateConsensus: validatePow,
+    consensusDict,
+    genesisBlock,
   })
+
+  const vm = await createVM({ blockchain, common })
+
+  await setupPreConditions(vm, testData)
+
+  await putBlocks(blockchain, common, testData)
+
+  await blockchain.iterator('vm', async (block: Block, _reorg: boolean) => {
+    const parentBlock = await blockchain!.getBlock(block.header.parentHash)
+    const parentState = parentBlock.header.stateRoot
+    // run block
+    await runBlock(vm, { block, root: parentState, skipHardForkValidation: true })
+  })
+
+  const blockchainHead = await vm.blockchain.getIteratorHead!()
+
+  console.log('--- Finished processing the Blockchain ---')
+  console.log('New head:', bytesToHex(blockchainHead.hash()))
+  console.log('Expected:', testData.lastblockhash)
+}
+
+void main()

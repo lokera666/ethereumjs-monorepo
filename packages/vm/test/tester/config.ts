@@ -1,5 +1,9 @@
-import { Chain, Common, Hardfork } from '@ethereumjs/common'
+import { Common, Hardfork, Mainnet, createCustomCommon } from '@ethereumjs/common'
+import * as verkle from 'micro-eth-signer/verkle'
 import * as path from 'path'
+
+import type { HardforkTransitionConfig } from '@ethereumjs/common'
+import type { KZG } from '@ethereumjs/util'
 
 /**
  * Default tests path (git submodule: ethereum-tests)
@@ -9,7 +13,7 @@ export const DEFAULT_TESTS_PATH = path.resolve('../ethereum-tests')
 /**
  * Default hardfork rules to run tests against
  */
-export const DEFAULT_FORK_CONFIG = 'Merge'
+export const DEFAULT_FORK_CONFIG = 'Paris'
 
 /**
  * Tests which should be fixed
@@ -22,6 +26,11 @@ export const SKIP_BROKEN = [
   'blockChainFrontierWithLargerTDvsHomesteadBlockchain2_FrontierToHomesteadAt5',
   'blockChainFrontierWithLargerTDvsHomesteadBlockchain_FrontierToHomesteadAt5',
   'HomesteadOverrideFrontier_FrontierToHomesteadAt5',
+
+  // Test skipped in ethereum-tests v14, this is an internal test for retesteth to throw an error if the test self is wrong
+  // This test is thus not supposed to pass
+  // TODO: remove me once this test is removed from the releases
+  'filling_unexpectedException',
 ]
 
 /**
@@ -38,90 +47,15 @@ export const SKIP_PERMANENT = [
  * tests running slow (run from time to time)
  */
 export const SKIP_SLOW = [
-  'Call50000',
-  'Call50000_ecrec',
-  'Call50000_identity',
-  'Call50000_identity2',
-  'Call50000_sha256',
-  'Call50000_rip160',
-  'Call50000bytesContract50_1',
-  'Call50000bytesContract50_2',
-  'Call1MB1024Calldepth',
-  'static_Call1MB1024Calldepth',
-  'static_Call50000',
-  'static_Call50000_ecrec',
-  'static_Call50000_identity',
-  'static_Call50000_identity2',
-  'static_Call50000_rip160',
-  'static_Return50000_2',
-  'Callcode50000',
-  'Return50000',
-  'Return50000_2',
-  'static_Call50000',
-  'static_Call50000_ecrec',
-  'static_Call50000_identity',
-  'static_Call50000_identity2',
-  'static_Call50000_sha256',
-  'static_Call50000_rip160',
-  'static_Call50000bytesContract50_1',
-  'static_Call50000bytesContract50_2',
-  'static_Call1MB1024Calldepth',
-  'static_Callcode50000',
-  'static_Return50000',
-  'static_Return50000_2',
-  'QuadraticComplexitySolidity_CallDataCopy',
-  'CALLBlake2f_MaxRounds',
-  'randomStatetest94_Istanbul',
+  'Call50000_sha256', // Last check: 2023-08-24, Constantinople HF, still slow (1-2 minutes per block execution)
+  'CALLBlake2f_MaxRounds', // Last check: 2023-08-24, Berlin HF, still very slow (several minutes per block execution)
+  'Return50000', // Last check: 2023-08-24, Constantinople HF, still slow (1-2 minutes per block execution)
+  'Return50000_2', // Last check: 2023-08-24, Constantinople HF, still slow (1-2 minutes per block execution)
+  'static_Call50000_sha256', // Last check: 2023-08-24, Berlin HF, still slow (30-60 secs per block execution)
   // vmPerformance tests
-  'ackermann',
-  'fibonacci',
-  'loop-add-10M',
-  'loop-divadd-10M',
-  'loop-divadd-unr100-10M',
-  'loop-exp',
-  'loop-mul',
-  'manyFunctions100',
-  'loopMul',
-  'loopExp',
+  'loopMul', // Last check: 2023-08-24, Berlin HF, still very slow (up to minutes per block execution)
+  'loopExp', // Last check: 2023-08-24, Berlin HF, somewhat slow (5-10 secs per block execution)
 ]
-
-/**
- * VMTests have been deprecated, see https://github.com/ethereum/tests/issues/593
- * skipVM test list is currently not used but might be useful in the future since VMTests
- * have now been converted to BlockchainTests, see https://github.com/ethereum/tests/pull/680
- * Disabling this due to ESLint, but will keep it here for possible future reference
- */
-/*const SKIP_VM = [
-  // slow performance tests
-  'loop-mul',
-  'loop-add-10M',
-  'loop-divadd-10M',
-  'loop-divadd-unr100-10M',
-  'loop-exp-16b-100k',
-  'loop-exp-1b-1M',
-  'loop-exp-2b-100k',
-  'loop-exp-32b-100k',
-  'loop-exp-4b-100k',
-  'loop-exp-8b-100k',
-  'loop-exp-nop-1M',
-  'loop-mulmod-2M',
-  'ABAcalls0',
-  'ABAcallsSuicide0',
-  'ABAcallsSuicide1',
-  'sha3_bigSize',
-  'CallRecursiveBomb0',
-  'CallToNameRegistrator0',
-  'CallToPrecompiledContract',
-  'CallToReturn1',
-  'PostToNameRegistrator0',
-  'PostToReturn1',
-  'callcodeToNameRegistrator0',
-  'callcodeToReturn1',
-  'callstatelessToNameRegistrator0',
-  'callstatelessToReturn1',
-  'createNameRegistrator',
-  'randomTest643',
-]*/
 
 /**
  * Returns an alias for specified hardforks to meet test dependencies requirements/assumptions.
@@ -129,28 +63,30 @@ export const SKIP_SLOW = [
  * @returns {String} Either an alias of the forkConfig param, or the forkConfig param itself
  */
 export function getRequiredForkConfigAlias(forkConfig: string) {
+  const indexOfPlus = forkConfig.indexOf('+')
+  const remainder = indexOfPlus !== -1 ? forkConfig.substring(indexOfPlus) : ''
   // Chainstart is also called Frontier and is called as such in the tests
   if (String(forkConfig).match(/^chainstart$/i)) {
-    return 'Frontier'
+    return 'Frontier' + remainder
   }
   // TangerineWhistle is named EIP150 (attention: misleading name)
   // in the client-independent consensus test suite
   if (String(forkConfig).match(/^tangerineWhistle$/i)) {
-    return 'EIP150'
+    return 'EIP150' + remainder
   }
   // SpuriousDragon is named EIP158 (attention: misleading name)
   // in the client-independent consensus test suite
   if (String(forkConfig).match(/^spuriousDragon$/i)) {
-    return 'EIP158'
+    return 'EIP158' + remainder
   }
   // Run the Istanbul tests for MuirGlacier since there are no dedicated tests
   if (String(forkConfig).match(/^muirGlacier/i)) {
-    return 'Istanbul'
+    return 'Istanbul' + remainder
   }
   // Petersburg is named ConstantinopleFix
   // in the client-independent consensus test suite
   if (String(forkConfig).match(/^petersburg$/i)) {
-    return 'ConstantinopleFix'
+    return 'ConstantinopleFix' + remainder
   }
   return forkConfig
 }
@@ -168,8 +104,13 @@ const normalHardforks = [
   'muirGlacier',
   'berlin',
   'london',
-  'merge',
+  'paris',
+  'shanghai',
   'arrowGlacier', // This network has no tests, but need to add it due to common generation logic
+  'cancun',
+  'prague',
+  'osaka',
+  'verkle',
 ]
 
 const transitionNetworks = {
@@ -222,7 +163,7 @@ const retestethAlias = {
   EIP150: 'tangerineWhistle',
   EIP158: 'spuriousDragon',
   ConstantinopleFix: 'petersburg',
-  Merged: 'merge',
+  Merge: 'paris',
 }
 
 const testLegacy = {
@@ -233,17 +174,18 @@ const testLegacy = {
   byzantium: true,
   constantinople: true,
   petersburg: true,
-  istanbul: false,
-  muirGlacier: false,
-  berlin: false,
-  london: false,
-  merge: false,
-  ByzantiumToConstantinopleFixAt5: false,
-  EIP158ToByzantiumAt5: false,
-  FrontierToHomesteadAt5: false,
-  HomesteadToDaoAt5: false,
-  HomesteadToEIP150At5: false,
-  BerlinToLondonAt5: false,
+  istanbul: true,
+  muirGlacier: true,
+  berlin: true,
+  london: true,
+  paris: true,
+  shanghai: true,
+  ByzantiumToConstantinopleFixAt5: true,
+  EIP158ToByzantiumAt5: true,
+  FrontierToHomesteadAt5: true,
+  HomesteadToDaoAt5: true,
+  HomesteadToEIP150At5: true,
+  BerlinToLondonAt5: true,
 }
 
 /**
@@ -258,9 +200,12 @@ export function getTestDirs(network: string, testType: string) {
       key.toLowerCase() === network.toLowerCase() &&
       testLegacy[key as keyof typeof testLegacy] === true
     ) {
-      // Tests for HFs before Istanbul have been moved under `LegacyTests/Constantinople`:
+      // Tests snapshots have moved in `LegacyTests/Constantinople`:
       // https://github.com/ethereum/tests/releases/tag/v7.0.0-beta.1
+      // Also tests have moved in `LegacyTests/Cancun`:
+      // https://github.com/ethereum/tests/releases/tag/v14.0
       testDirs.push('LegacyTests/Constantinople/' + testType)
+      testDirs.push('LegacyTests/Cancun/' + testType)
       break
     }
   }
@@ -272,7 +217,7 @@ export function getTestDirs(network: string, testType: string) {
  * @param ttd If set: total terminal difficulty to switch to merge
  * @returns
  */
-function setupCommonWithNetworks(network: string, ttd?: number) {
+function setupCommonWithNetworks(network: string, ttd?: number, timestamp?: number, kzg?: KZG) {
   let networkLowercase: string // This only consists of the target hardfork, so without the EIPs
   if (network.includes('+')) {
     const index = network.indexOf('+')
@@ -283,15 +228,15 @@ function setupCommonWithNetworks(network: string, ttd?: number) {
   // normal hard fork, return the common with this hard fork
   // find the right upper/lowercased version
   const hfName = normalHardforks.reduce((previousValue, currentValue) =>
-    currentValue.toLowerCase() === networkLowercase ? currentValue : previousValue
+    currentValue.toLowerCase() === networkLowercase ? currentValue : previousValue,
   )
-  const mainnetCommon = new Common({ chain: Chain.Mainnet, hardfork: hfName })
+  const mainnetCommon = new Common({ chain: Mainnet, hardfork: hfName })
   const hardforks = mainnetCommon.hardforks()
-  const testHardforks = []
+  const testHardforks: HardforkTransitionConfig[] = []
   for (const hf of hardforks) {
     // check if we enable this hf
     // disable dao hf by default (if enabled at block 0 forces the first 10 blocks to have dao-hard-fork in extraData of block header)
-    if (mainnetCommon.gteHardfork(hf.name) === true && hf.name !== Hardfork.Dao) {
+    if (mainnetCommon.gteHardfork(hf.name) && hf.name !== Hardfork.Dao) {
       // this hardfork should be activated at block 0
       testHardforks.push({
         name: hf.name,
@@ -301,29 +246,95 @@ function setupCommonWithNetworks(network: string, ttd?: number) {
       })
     } else {
       // disable hardforks newer than the test hardfork (but do add "support" for it, it just never gets activated)
-      if (ttd === undefined) {
+      if (
+        (ttd === undefined && timestamp === undefined) ||
+        (hf.name === 'paris' && ttd !== undefined)
+      ) {
         testHardforks.push({
           name: hf.name,
-          //forkHash: hf.forkHash,
           block: null,
         })
-      } else if (hf.name === 'merge') {
-        // merge will currently always be after a hardfork, so add it here
+      }
+      if (timestamp !== undefined && hf.name !== Hardfork.Dao) {
         testHardforks.push({
           name: hf.name,
           block: null,
-          ttd: BigInt(ttd),
+          timestamp,
         })
       }
     }
   }
-  const common = Common.custom(
+  const common = createCustomCommon(
     {
       hardforks: testHardforks,
       defaultHardfork: hfName,
     },
-    { eips: [3607] }
+    Mainnet,
+    { eips: [3607], customCrypto: { kzg } },
   )
+  // Activate EIPs
+  const eips = network.match(/(?<=\+)(.\d+)/g)
+  if (eips) {
+    common.setEIPs(eips.map((e: string) => parseInt(e)))
+  }
+  return common
+}
+
+/**
+ * Returns a common instance configured for verkle
+ * @param network Network target (this can include EIPs, such as Byzantium+2537+2929)
+ * @param ttd If set: total terminal difficulty to switch to merge
+ * @returns
+ */
+function setupCommonForVerkle(network: string, timestamp?: number, kzg?: KZG) {
+  let ttd
+  // hard fork that verkle tests are filled on
+  const hfName = 'shanghai'
+  const mainnetCommon = new Common({ chain: Mainnet, hardfork: hfName })
+  const hardforks = mainnetCommon.hardforks().slice(0, 17) // skip hardforks after Shanghai
+  const testHardforks: HardforkTransitionConfig[] = []
+  for (const hf of hardforks) {
+    // check if we enable this hf
+    // disable dao hf by default (if enabled at block 0 forces the first 10 blocks to have dao-hard-fork in extraData of block header)
+    if (mainnetCommon.gteHardfork(hf.name) && hf.name !== Hardfork.Dao) {
+      // this hardfork should be activated at block 0
+      testHardforks.push({
+        name: hf.name,
+        // Current type definition Partial<Chain> in Common is currently not allowing to pass in forkHash
+        // forkHash: hf.forkHash,
+        block: 0,
+      })
+    } else {
+      // disable hardforks newer than the test hardfork (but do add "support" for it, it just never gets activated)
+      if (
+        (ttd === undefined && timestamp === undefined) ||
+        (hf.name === 'paris' && ttd !== undefined)
+      ) {
+        testHardforks.push({
+          name: hf.name,
+          block: null,
+        })
+      }
+      if (timestamp !== undefined && hf.name !== Hardfork.Dao) {
+        testHardforks.push({
+          name: hf.name,
+          block: null,
+          timestamp,
+        })
+      }
+    }
+  }
+
+  testHardforks.push({ name: 'verkle', block: 1 })
+  const common = createCustomCommon(
+    {
+      hardforks: testHardforks,
+      defaultHardfork: 'verkle',
+    },
+    Mainnet,
+    { eips: [2935, 3607], customCrypto: { kzg, verkle } },
+  )
+
   // Activate EIPs
   const eips = network.match(/(?<=\+)(.\d+)/g)
   if (eips) {
@@ -341,18 +352,22 @@ function setupCommonWithNetworks(network: string, ttd?: number) {
  * For instance, "London+3855+3860" will also activate EIP-3855 and EIP-3860.
  * @returns the Common which should be used
  */
-export function getCommon(network: string): Common {
+export function getCommon(network: string, kzg?: KZG): Common {
   if (retestethAlias[network as keyof typeof retestethAlias] !== undefined) {
     network = retestethAlias[network as keyof typeof retestethAlias]
   }
   let networkLowercase = network.toLowerCase()
+  // Special handler for verkle tests
+  if (networkLowercase.includes('verkle')) {
+    return setupCommonForVerkle(network, undefined, kzg)
+  }
   if (network.includes('+')) {
     const index = network.indexOf('+')
     networkLowercase = network.slice(0, index).toLowerCase()
   }
   if (normalHardforks.map((str) => str.toLowerCase()).includes(networkLowercase)) {
     // Case 1: normal network, such as "London" or "Byzantium" (without any EIPs enabled, and it is not a transition network)
-    return setupCommonWithNetworks(network)
+    return setupCommonWithNetworks(network, undefined, undefined, kzg)
   } else if (networkLowercase.match('tomergeatdiff')) {
     // Case 2: special case of a transition network, this setups the right common with the right Merge properties (TTD)
     // This is a HF -> Merge transition
@@ -360,7 +375,11 @@ export function getCommon(network: string): Common {
     const end = start + 'tomergeatdiff'.length
     const startNetwork = network.substring(0, start) // HF before the merge
     const TTD = Number('0x' + network.substring(end)) // Total difficulty to transition to PoS
-    return setupCommonWithNetworks(startNetwork, TTD)
+    return setupCommonWithNetworks(startNetwork, TTD, undefined, kzg)
+  } else if (networkLowercase === 'shanghaitocancunattime15k') {
+    return setupCommonWithNetworks('Shanghai', undefined, 15000, kzg)
+  } else if (networkLowercase === 'cancuntopragueattime15k') {
+    return setupCommonWithNetworks('Cancun', undefined, 15000, kzg)
   } else {
     // Case 3: this is not a "default fork" network, but it is a "transition" network. Test the VM if it transitions the right way
     const transitionForks =
@@ -373,13 +392,13 @@ export function getCommon(network: string): Common {
       throw new Error('network not supported: ' + network)
     }
     const mainnetCommon = new Common({
-      chain: Chain.Mainnet,
+      chain: Mainnet,
       hardfork: transitionForks.finalSupportedFork,
     })
     const hardforks = mainnetCommon.hardforks()
     const testHardforks = []
     for (const hf of hardforks) {
-      if (mainnetCommon.gteHardfork(hf.name) === true) {
+      if (mainnetCommon.gteHardfork(hf.name)) {
         // this hardfork should be activated at block 0
         const forkBlockNumber = transitionForks[hf.name as keyof typeof transitionForks] as
           | number
@@ -397,16 +416,18 @@ export function getCommon(network: string): Common {
         })
       }
     }
-    return Common.custom(
+    const common = createCustomCommon(
       {
         hardforks: testHardforks,
       },
+      Mainnet,
       {
-        baseChain: 'mainnet',
         hardfork: transitionForks.startFork,
         eips: [3607],
-      }
+        customCrypto: { kzg },
+      },
     )
+    return common
   }
 }
 
@@ -423,18 +444,20 @@ const expectedTestsFull: {
     Byzantium: 15703,
     Constantinople: 33146,
     Petersburg: 33128,
-    Istanbul: 38773,
-    MuirGlacier: 38773,
-    Berlin: 41872,
-    London: 61547,
+    Istanbul: 38340,
+    MuirGlacier: 38340,
+    Berlin: 41365,
+    London: 61197,
     ArrowGlacier: 0,
-    Merge: 60373,
+    Paris: 60373,
+    Shanghai: 61563,
     ByzantiumToConstantinopleFixAt5: 3,
     EIP158ToByzantiumAt5: 3,
     FrontierToHomesteadAt5: 13,
     HomesteadToDaoAt5: 32,
     HomesteadToEIP150At5: 3,
     BerlinToLondonAt5: 24,
+    Cancun: 61633,
   },
   GeneralStateTests: {
     Chainstart: 1045,
@@ -445,16 +468,19 @@ const expectedTestsFull: {
     Byzantium: 4857,
     Constantinople: 10648,
     Petersburg: 10642,
-    Istanbul: 12439,
-    MuirGlacier: 12439,
+    Istanbul: 12271,
+    MuirGlacier: 12271,
     Berlin: 13214,
     London: 19449,
+    Paris: 19727,
+    Shanghai: 19564,
     ByzantiumToConstantinopleFixAt5: 0,
     EIP158ToByzantiumAt5: 0,
     FrontierToHomesteadAt5: 0,
     HomesteadToDaoAt5: 0,
     HomesteadToEIP150At5: 0,
     BerlinToLondonAt5: 0,
+    Cancun: 19048,
   },
 }
 
@@ -463,7 +489,7 @@ const expectedTestsFull: {
  */
 export function getExpectedTests(
   fork: string,
-  name: 'BlockchainTests' | 'GeneralStateTests'
+  name: 'BlockchainTests' | 'GeneralStateTests',
 ): number | undefined {
   if (expectedTestsFull[name] === undefined) {
     return

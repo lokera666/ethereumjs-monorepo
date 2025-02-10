@@ -1,25 +1,23 @@
-import { Chain, Common, Hardfork } from '@ethereumjs/common'
-import * as tape from 'tape'
+import { Common, Hardfork, Mainnet } from '@ethereumjs/common'
+import { assert, describe, it } from 'vitest'
 
-import { EVM } from '../../src'
-import { getActivePrecompiles } from '../../src/precompiles'
-import { getEEI } from '../utils'
+import { createEVM, getActivePrecompiles } from '../../src/index.js'
 
-tape('Precompiles: ECMUL', (t) => {
-  t.test('ECMUL', async (st) => {
-    const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Petersburg })
-    const eei = await getEEI()
-    const evm = await EVM.create({ common, eei })
-    const ECMUL = getActivePrecompiles(common).get('0000000000000000000000000000000000000007')!
+describe('Precompiles: BN254MUL', () => {
+  it('BN254MUL', async () => {
+    const common = new Common({ chain: Mainnet, hardfork: Hardfork.Petersburg })
+    const evm = await createEVM({
+      common,
+    })
+    const BN254MUL = getActivePrecompiles(common).get('0000000000000000000000000000000000000007')!
 
-    const result = await ECMUL({
-      data: Buffer.alloc(0),
+    const result = await BN254MUL({
+      data: new Uint8Array(0),
       gasLimit: BigInt(0xffff),
-      _common: common,
+      common,
       _EVM: evm,
     })
 
-    st.deepEqual(result.executionGasUsed, BigInt(40000), 'should use petersburg gas costs')
-    st.end()
+    assert.deepEqual(result.executionGasUsed, BigInt(40000), 'should use petersburg gas costs')
   })
 })

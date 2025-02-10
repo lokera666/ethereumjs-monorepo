@@ -1,16 +1,19 @@
-import { Address } from '@ethereumjs/util'
+import { BIGINT_0, createZeroAddress } from '@ethereumjs/util'
 
-import type { PrecompileFunc } from './precompiles'
+import type { PrecompileFunc } from './precompiles/index.js'
+import type { EOFEnv } from './types.js'
+import type { VerkleAccessWitnessInterface } from '@ethereumjs/common'
+import type { Address, PrefixedHexString } from '@ethereumjs/util'
 
 const defaults = {
-  value: BigInt(0),
-  caller: Address.zero(),
-  data: Buffer.alloc(0),
+  value: BIGINT_0,
+  caller: createZeroAddress(),
+  data: new Uint8Array(0),
   depth: 0,
   isStatic: false,
   isCompiled: false,
   delegatecall: false,
-  gasRefund: BigInt(0),
+  gasRefund: BIGINT_0,
 }
 
 interface MessageOpts {
@@ -18,20 +21,26 @@ interface MessageOpts {
   value?: bigint
   caller?: Address
   gasLimit: bigint
-  data?: Buffer
+  data?: Uint8Array
+  eofCallData?: Uint8Array
   depth?: number
-  code?: Buffer | PrecompileFunc
+  code?: Uint8Array | PrecompileFunc
   codeAddress?: Address
   isStatic?: boolean
   isCompiled?: boolean
-  salt?: Buffer
+  salt?: Uint8Array
   /**
-   * A map of addresses to selfdestruct, see {@link Message.selfdestruct}
+   * A set of addresses to selfdestruct, see {@link Message.selfdestruct}
    */
-  selfdestruct?: { [key: string]: boolean } | { [key: string]: Buffer }
+  selfdestruct?: Set<PrefixedHexString>
+  /**
+   * Map of addresses which were created (used in EIP 6780)
+   */
+  createdAddresses?: Set<PrefixedHexString>
   delegatecall?: boolean
-  authcallOrigin?: Address
   gasRefund?: bigint
+  blobVersionedHashes?: PrefixedHexString[]
+  accessWitness?: VerkleAccessWitnessInterface
 }
 
 export class Message {
@@ -39,26 +48,32 @@ export class Message {
   value: bigint
   caller: Address
   gasLimit: bigint
-  data: Buffer
+  data: Uint8Array
+  eofCallData?: Uint8Array // Only used in EOFCreate to signal an EOF contract to be created with this calldata (via EOFCreate)
+  isCreate?: boolean
   depth: number
-  code?: Buffer | PrecompileFunc
+  code?: Uint8Array | PrecompileFunc
   _codeAddress?: Address
   isStatic: boolean
   isCompiled: boolean
-  salt?: Buffer
-  containerCode?: Buffer /** container code for EOF1 contracts - used by CODECOPY/CODESIZE */
+  salt?: Uint8Array
+  eof?: EOFEnv
+  chargeCodeAccesses?: boolean
   /**
-   * Map of addresses to selfdestruct. Key is the unprefixed address.
-   * Value is a boolean when marked for destruction and replaced with a Buffer containing the address where the remaining funds are sent.
+   * Set of addresses to selfdestruct. Key is the unprefixed address.
    */
-  selfdestruct?: { [key: string]: boolean } | { [key: string]: Buffer }
+  selfdestruct?: Set<PrefixedHexString>
+  /**
+   * Map of addresses which were created (used in EIP 6780)
+   */
+  createdAddresses?: Set<PrefixedHexString>
   delegatecall: boolean
-  /**
-   * This is used to store the origin of the AUTHCALL,
-   * the purpose is to figure out where `value` should be taken from (not from `caller`)
-   */
-  authcallOrigin?: Address
   gasRefund: bigint // Keeps track of the gasRefund at the start of the frame (used for journaling purposes)
+  /**
+   * List of versioned hashes if message is a blob transaction in the outer VM
+   */
+  blobVersionedHashes?: PrefixedHexString[]
+  accessWitness?: VerkleAccessWitnessInterface
 
   constructor(opts: MessageOpts) {
     this.to = opts.to
@@ -66,6 +81,7 @@ export class Message {
     this.caller = opts.caller ?? defaults.caller
     this.gasLimit = opts.gasLimit
     this.data = opts.data ?? defaults.data
+    this.eofCallData = opts.eofCallData
     this.depth = opts.depth ?? defaults.depth
     this.code = opts.code
     this._codeAddress = opts.codeAddress
@@ -73,10 +89,11 @@ export class Message {
     this.isCompiled = opts.isCompiled ?? defaults.isCompiled
     this.salt = opts.salt
     this.selfdestruct = opts.selfdestruct
+    this.createdAddresses = opts.createdAddresses
     this.delegatecall = opts.delegatecall ?? defaults.delegatecall
-    this.authcallOrigin = opts.authcallOrigin
     this.gasRefund = opts.gasRefund ?? defaults.gasRefund
-
+    this.blobVersionedHashes = opts.blobVersionedHashes
+    this.accessWitness = opts.accessWitness
     if (this.value < 0) {
       throw new Error(`value field cannot be negative, received ${this.value}`)
     }
