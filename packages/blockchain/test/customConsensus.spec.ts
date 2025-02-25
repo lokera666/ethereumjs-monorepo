@@ -1,11 +1,14 @@
-import { Block } from '@ethereumjs/block'
+import { createBlock } from '@ethereumjs/block'
 import { Common, Hardfork } from '@ethereumjs/common'
-import * as tape from 'tape'
+import { bytesToHex } from '@ethereumjs/util'
+import { assert, describe, it } from 'vitest'
 
-import { Blockchain, EthashConsensus } from '../src'
+import { createBlockchain } from '../src/index.js'
 
-import type { Consensus } from '../src'
-import type { BlockHeader } from '@ethereumjs/block'
+import { testnetData } from './testdata/testnet.js'
+
+import type { Consensus, ConsensusDict } from '../src/index.js'
+import type { Block, BlockHeader } from '@ethereumjs/block'
 
 class fibonacciConsensus implements Consensus {
   algorithm: string
@@ -19,9 +22,9 @@ class fibonacciConsensus implements Consensus {
     return new Promise<void>((resolve) => resolve())
   }
   validateConsensus(_block: Block): Promise<void> {
-    if (_block.header.extraData.toString('hex') !== '12358d') {
+    if (bytesToHex(_block.header.extraData) !== '0x12358d') {
       throw new Error(
-        'header contains invalid extradata - must match first 6 elements of fibonacci sequence'
+        'header contains invalid extradata - must match first 6 elements of fibonacci sequence',
       )
     }
     return new Promise<void>((resolve) => resolve())
@@ -40,106 +43,126 @@ class fibonacciConsensus implements Consensus {
   }
 }
 
-tape('Optional consensus parameter in blockchain constructor', async (t) => {
-  t.plan(1)
-  const common = new Common({ chain: 'mainnet', hardfork: Hardfork.Chainstart })
-  const consensus = new fibonacciConsensus()
-  try {
-    const blockchain = await Blockchain.create({ common, consensus })
-    t.equals(
-      (blockchain.consensus as fibonacciConsensus).algorithm,
-      'fibonacciConsensus',
-      'consensus algorithm matches'
-    )
-  } catch (err) {
-    t.fail('blockchain should instantiate successfully')
-  }
+testnetData.consensus.algorithm = 'fibonacci'
+const consensusDict: ConsensusDict = {}
+consensusDict['fibonacci'] = new fibonacciConsensus()
+
+describe('Optional consensus parameter in blockchain constructor', () => {
+  it('blockchain constructor should work with custom consensus', async () => {
+    const common = new Common({ chain: testnetData, hardfork: Hardfork.Chainstart })
+    try {
+      const blockchain = await createBlockchain({ common, validateConsensus: true, consensusDict })
+      assert.equal(
+        (blockchain.consensus as fibonacciConsensus).algorithm,
+        'fibonacciConsensus',
+        'consensus algorithm matches',
+      )
+    } catch (err) {
+      assert.fail('blockchain should instantiate successfully')
+    }
+  })
 })
 
-tape('Custom consensus validation rules', async (t) => {
-  t.plan(3)
-  const common = new Common({ chain: 'mainnet', hardfork: Hardfork.Chainstart })
-  const consensus = new fibonacciConsensus()
-  const blockchain = await Blockchain.create({ common, consensus })
-  const block = Block.fromBlockData(
-    {
-      header: {
-        number: 1n,
-        difficulty: 1n,
-        extraData: '0x12358d',
-        parentHash: blockchain.genesisBlock.hash(),
-        timestamp: blockchain.genesisBlock.header.timestamp + 1n,
-        gasLimit: blockchain.genesisBlock.header.gasLimit + 1n,
+describe('Custom consensus validation rules', () => {
+  it('should validate custom consensus rules', async () => {
+    const common = new Common({ chain: testnetData, hardfork: Hardfork.Chainstart })
+    const blockchain = await createBlockchain({ common, validateConsensus: true, consensusDict })
+    const block = createBlock(
+      {
+        header: {
+          number: 1n,
+          difficulty: 1n,
+          extraData: '0x12358d',
+          parentHash: blockchain.genesisBlock.hash(),
+          timestamp: blockchain.genesisBlock.header.timestamp + 1n,
+          gasLimit: blockchain.genesisBlock.header.gasLimit + 1n,
+        },
       },
-    },
-    { common }
-  )
-
-  try {
-    await blockchain.putBlock(block)
-    t.pass('put block with valid difficulty and extraData')
-  } catch {
-    t.fail('should have put block with valid difficulty and extraData')
-  }
-
-  const blockWithBadDifficulty = Block.fromBlockData(
-    {
-      header: {
-        number: 2n,
-        difficulty: 2n,
-        extraData: '0x12358d',
-        parentHash: block.hash(),
-        timestamp: block.header.timestamp + 1n,
-      },
-    },
-    { common }
-  )
-  try {
-    await blockchain.putBlock(blockWithBadDifficulty)
-    t.fail('should throw')
-  } catch (err: any) {
-    t.ok(err.message.includes('invalid difficulty'), 'failed to put block with invalid difficulty')
-  }
-
-  const blockWithBadExtraData = Block.fromBlockData(
-    {
-      header: {
-        number: 2n,
-        difficulty: 1n,
-        extraData: '0x12358c',
-        parentHash: block.hash(),
-        timestamp: block.header.timestamp + 1n,
-        gasLimit: block.header.gasLimit + 1n,
-      },
-    },
-    { common }
-  )
-  try {
-    await blockchain.putBlock(blockWithBadExtraData)
-    t.fail('should throw')
-  } catch (err: any) {
-    t.ok(
-      err.message ===
-        'header contains invalid extradata - must match first 6 elements of fibonacci sequence',
-      'failed to put block with invalid extraData'
+      { common },
     )
-  }
+
+    try {
+      await blockchain.putBlock(block)
+      assert.deepEqual(
+        (await blockchain.getBlock(block.header.number)).header.hash(),
+        block.header.hash(),
+        'put block with valid difficulty and extraData',
+      )
+    } catch {
+      assert.fail('should have put block with valid difficulty and extraData')
+    }
+
+    const blockWithBadDifficulty = createBlock(
+      {
+        header: {
+          number: 2n,
+          difficulty: 2n,
+          extraData: '0x12358d',
+          parentHash: block.hash(),
+          timestamp: block.header.timestamp + 1n,
+        },
+      },
+      { common },
+    )
+    try {
+      await blockchain.putBlock(blockWithBadDifficulty)
+      assert.fail('should throw')
+    } catch (err: any) {
+      assert.ok(
+        err.message.includes('invalid difficulty'),
+        'failed to put block with invalid difficulty',
+      )
+    }
+
+    const blockWithBadExtraData = createBlock(
+      {
+        header: {
+          number: 2n,
+          difficulty: 1n,
+          extraData: '0x12358c',
+          parentHash: block.hash(),
+          timestamp: block.header.timestamp + 1n,
+          gasLimit: block.header.gasLimit + 1n,
+        },
+      },
+      { common },
+    )
+    try {
+      await blockchain.putBlock(blockWithBadExtraData)
+      assert.fail('should throw')
+    } catch (err: any) {
+      assert.ok(
+        err.message ===
+          'header contains invalid extradata - must match first 6 elements of fibonacci sequence',
+        'failed to put block with invalid extraData',
+      )
+    }
+  })
 })
 
-tape('consensus transition checks', async (t) => {
-  t.plan(2)
-  const common = new Common({ chain: 'mainnet', hardfork: Hardfork.Chainstart })
-  const consensus = new fibonacciConsensus()
-  const blockchain = await Blockchain.create({ common, consensus })
+describe('consensus transition checks', () => {
+  it('should transition correctly', async () => {
+    const common = new Common({ chain: testnetData, hardfork: Hardfork.Chainstart })
+    const blockchain = await createBlockchain({ common, validateConsensus: true, consensusDict })
 
-  t.doesNotThrow(
-    () => (blockchain as any).checkAndTransitionHardForkByNumber(5),
-    'checkAndTransitionHardForkByNumber should not throw with custom consensus'
-  )
-  ;(blockchain as any).consensus = new EthashConsensus()
-  ;(blockchain._common as any).consensusAlgorithm = () => 'fibonacci'
-  t.throws(
-    () => (blockchain as any).checkAndTransitionHardForkByNumber(5),
-    'checkAndTransitionHardForkByNumber should throw when using standard consensus (ethash, clique, casper) but consensus algorithm defined in common is different'
-  )
+    try {
+      await blockchain.checkAndTransitionHardForkByNumber(5n)
+      assert.ok('checkAndTransitionHardForkByNumber does not throw with custom consensus')
+    } catch (err: any) {
+      assert.fail(
+        `checkAndTransitionHardForkByNumber should not throw with custom consensus, error=${err.message}`,
+      )
+    }
+
+    blockchain.common.consensusAlgorithm = () => 'ethash'
+
+    try {
+      await blockchain.checkAndTransitionHardForkByNumber(5n)
+      assert.fail(
+        'checkAndTransitionHardForkByNumber should throw when using standard consensus (ethash, clique, casper) but consensus algorithm defined in common is different',
+      )
+    } catch (err: any) {
+      assert.ok(err.message.includes('Consensus object for ethash must be passed'))
+    }
+  })
 })

@@ -1,19 +1,19 @@
-import { Block, BlockHeader } from '@ethereumjs/block'
-import { bufferToHex, zeros } from '@ethereumjs/util'
-import * as tape from 'tape'
-import * as td from 'testdouble'
+import { BlockHeader, createBlock } from '@ethereumjs/block'
+import { Common, Hardfork, Mainnet } from '@ethereumjs/common'
+import { bytesToHex, randomBytes } from '@ethereumjs/util'
+import { assert, describe, it, vi } from 'vitest'
 
-import { INVALID_PARAMS } from '../../../lib/rpc/error-code'
-import blocks = require('../../testdata/blocks/beacon.json')
-import genesisJSON = require('../../testdata/geth-genesis/post-merge.json')
-import { baseRequest, baseSetup, params, setupChain } from '../helpers'
-import { checkError } from '../util'
+import { INVALID_FORKCHOICE_STATE, INVALID_PARAMS } from '../../../src/rpc/error-code.js'
+import { blockToExecutionPayload } from '../../../src/rpc/modules/index.js'
+import { beaconData } from '../../testdata/blocks/beacon.js'
+import { postMergeData } from '../../testdata/geth-genesis/post-merge.js'
+import { baseSetup, batchBlocks, getRPCClient, setupChain } from '../helpers.js'
 
-import { batchBlocks } from './newPayloadV1.spec'
+import type { Block } from '@ethereumjs/block'
 
 const method = 'engine_forkchoiceUpdatedV1'
 
-const originalValidate = BlockHeader.prototype._consensusFormatValidation
+BlockHeader.prototype['_consensusFormatValidation'] = vi.fn()
 
 const validForkChoiceState = {
   headBlockHash: '0x3b8fb240d288781d4aac94d3fd16809ee413bc99294a085798a589dae51ddd4a',
@@ -27,257 +27,298 @@ const validPayloadAttributes = {
   suggestedFeeRecipient: '0xa94f5374fce5edbc8e2a8697c15331677e6ebf0b',
 }
 
-export const validPayload = [validForkChoiceState, validPayloadAttributes]
+const common = new Common({ chain: Mainnet, hardfork: Hardfork.Paris })
 
-tape(`${method}: call with invalid head block hash without 0x`, async (t) => {
-  const { server } = baseSetup({ engine: true, includeVM: true })
-  const invalidForkChoiceState = {
-    ...validForkChoiceState,
-    headBlockHash: 'invalid formatted head block hash',
-  }
-  const req = params(method, [invalidForkChoiceState, validPayloadAttributes])
-  const expectRes = checkError(
-    t,
-    INVALID_PARAMS,
-    "invalid argument 0 for key 'headBlockHash': hex string without 0x prefix"
-  )
-  await baseRequest(t, server, req, 200, expectRes)
-})
-
-tape(`${method}: call with invalid hex string as block hash`, async (t) => {
-  const { server } = baseSetup({ engine: true, includeVM: true })
-
-  const invalidForkChoiceState = {
-    ...validForkChoiceState,
-    finalizedBlockHash: '0xinvalid',
-  }
-  const req = params(method, [invalidForkChoiceState, validPayloadAttributes])
-  const expectRes = checkError(
-    t,
-    INVALID_PARAMS,
-    "invalid argument 0 for key 'finalizedBlockHash': invalid block hash"
-  )
-  await baseRequest(t, server, req, 200, expectRes)
-})
-
-tape(`${method}: call with valid data but parent block is not loaded yet`, async (t) => {
-  const { server } = await setupChain(genesisJSON, 'post-merge', { engine: true })
-
-  const nonExistentHeadBlockHash = {
-    ...validForkChoiceState,
-    headBlockHash: '0x1d93f244823f80efbd9292a0d0d72a2b03df8cd5a9688c6c3779d26a7cc5009c',
-  }
-  const req = params(method, [nonExistentHeadBlockHash, validPayloadAttributes])
-  const expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.status, 'SYNCING')
-    t.equal(res.body.result.payloadStatus.latestValidHash, null)
-    t.equal(res.body.result.payloadStatus.validationError, null)
-    t.equal(res.body.result.payloadId, null)
-  }
-  await baseRequest(t, server, req, 200, expectRes)
-})
-
-tape(`${method}: call with valid data and synced data`, async (t) => {
-  const { server } = await setupChain(genesisJSON, 'post-merge', { engine: true })
-
-  const req = params(method, validPayload)
-  const expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.status, 'VALID')
-    t.equal(
-      res.body.result.payloadStatus.latestValidHash,
-      '0x3b8fb240d288781d4aac94d3fd16809ee413bc99294a085798a589dae51ddd4a'
-    )
-    t.equal(res.body.result.payloadStatus.validationError, null)
-    t.notEqual(res.body.result.payloadId, null)
-  }
-  await baseRequest(t, server, req, 200, expectRes)
-})
-
-tape(`${method}: call with valid fork choice state without payload attributes`, async (t) => {
-  const { server } = await setupChain(genesisJSON, 'post-merge', { engine: true })
-  const req = params(method, [validForkChoiceState])
-  const expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.status, 'VALID')
-    t.equal(res.body.result.payloadStatus.latestValidHash, validForkChoiceState.headBlockHash)
-    t.equal(res.body.result.payloadStatus.validationError, null)
-    t.equal(res.body.result.payloadId, null)
-  }
-  await baseRequest(t, server, req, 200, expectRes)
-})
-
-tape(`${method}: invalid terminal block with only genesis block`, async (t) => {
-  const genesisWithHigherTtd = {
-    ...genesisJSON,
-    config: {
-      ...genesisJSON.config,
-      terminalTotalDifficulty: 17179869185,
-    },
-  }
-
-  BlockHeader.prototype._consensusFormatValidation = td.func<any>()
-  const { server } = await setupChain(genesisWithHigherTtd, 'post-merge', {
-    engine: true,
-  })
-
-  const req = params(method, [validForkChoiceState, null])
-  const expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.status, 'INVALID')
-    t.equal(res.body.result.payloadStatus.latestValidHash, bufferToHex(zeros(32)))
-  }
-  await baseRequest(t, server, req, 200, expectRes)
-})
-
-tape(`${method}: invalid terminal block with 1+ blocks`, async (t) => {
-  const genesisWithHigherTtd = {
-    ...genesisJSON,
-    config: {
-      ...genesisJSON.config,
-      terminalTotalDifficulty: 17179869185,
-      clique: undefined,
-      ethash: {},
-    },
-  }
-
-  const { server, chain, common } = await setupChain(genesisWithHigherTtd, 'post-merge', {
-    engine: true,
-  })
-
-  const newBlock = Block.fromBlockData(
+function createBlockFromParent(parentBlock: Block) {
+  const prevRandao = randomBytes(32)
+  const block = createBlock(
     {
       header: {
-        number: blocks[0].blockNumber,
-        parentHash: blocks[0].parentHash,
-        difficulty: 1,
-        extraData: Buffer.alloc(97),
+        parentHash: parentBlock.hash(),
+        mixHash: prevRandao,
+        number: parentBlock.header.number + BigInt(1),
+        stateRoot: parentBlock.header.stateRoot,
+        timestamp: parentBlock.header.timestamp + BigInt(1),
+        gasLimit: parentBlock.header.gasLimit,
       },
     },
-    { common }
+    { common },
   )
+  return block
+}
 
-  await chain.putBlocks([newBlock])
-  const req = params(method, [
-    { ...validForkChoiceState, headBlockHash: '0x' + newBlock.hash().toString('hex') },
-    null,
-  ])
-  const expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.status, 'INVALID')
-    t.equal(res.body.result.payloadStatus.latestValidHash, bufferToHex(zeros(32)))
-  }
-  await baseRequest(t, server, req, 200, expectRes)
-})
+const validPayload = [validForkChoiceState, validPayloadAttributes]
 
-tape(`${method}: call with deep parent lookup`, async (t) => {
-  const { server } = await setupChain(genesisJSON, 'post-merge', { engine: true })
-
-  let req = params(method, [validForkChoiceState])
-  let expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.status, 'VALID')
-  }
-  await baseRequest(t, server, req, 200, expectRes, false)
-
-  for (let i = 0; i < 3; i++) {
-    const req = params('engine_newPayloadV1', [blocks[i]])
-    const expectRes = (res: any) => {
-      t.equal(res.body.result.status, 'VALID')
+describe(method, () => {
+  it('call with invalid head block hash without 0x', async () => {
+    const { rpc } = await baseSetup({ engine: true, includeVM: true })
+    const invalidForkChoiceState = {
+      ...validForkChoiceState,
+      headBlockHash: 'invalid formatted head block hash',
     }
-    await baseRequest(t, server, req, 200, expectRes, false)
-  }
+    const res = await rpc.request(method, [invalidForkChoiceState, validPayloadAttributes])
+    assert.equal(res.error.code, INVALID_PARAMS)
+    assert.ok(
+      res.error.message.includes(
+        "invalid argument 0 for key 'headBlockHash': hex string without 0x prefix",
+      ),
+    )
+  })
 
-  // Now set the head to the last hash
-  req = params(method, [{ ...validForkChoiceState, headBlockHash: blocks[2].blockHash }])
-  expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.status, 'VALID')
-  }
-  await baseRequest(t, server, req, 200, expectRes)
-})
+  it('call with invalid hex string as block hash', async () => {
+    const { rpc } = await baseSetup({ engine: true, includeVM: true })
 
-tape(`${method}: call with deep parent lookup and with stored safe block hash`, async (t) => {
-  const { server } = await setupChain(genesisJSON, 'post-merge', { engine: true })
-
-  let req = params(method, [validForkChoiceState])
-  let expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.status, 'VALID')
-  }
-  await baseRequest(t, server, req, 200, expectRes, false)
-
-  await batchBlocks(t, server)
-
-  req = params(method, [
-    {
+    const invalidForkChoiceState = {
       ...validForkChoiceState,
-      headBlockHash: blocks[2].blockHash,
-      safeBlockHash: blocks[0].blockHash,
-    },
-  ])
-  expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.status, 'VALID')
-  }
-  await baseRequest(t, server, req, 200, expectRes)
-})
+      finalizedBlockHash: '0xinvalid', // cspell:disable-line
+    }
+    const res = await rpc.request(method, [invalidForkChoiceState, validPayloadAttributes])
+    assert.equal(res.error.code, INVALID_PARAMS)
+    assert.ok(
+      res.error.message.includes(
+        "invalid argument 0 for key 'finalizedBlockHash': invalid block hash",
+      ),
+    )
+  })
 
-tape(`${method}: unknown finalized block hash`, async (t) => {
-  const { server } = await setupChain(genesisJSON, 'post-merge', { engine: true })
-  const req = params(method, [
-    {
+  it('call with valid data but parent block is not loaded yet', async () => {
+    const { server } = await setupChain(postMergeData, 'post-merge', { engine: true })
+    const rpc = getRPCClient(server)
+    const nonExistentHeadBlockHash = {
       ...validForkChoiceState,
-      finalizedBlockHash: '0x3b8fb240d288781d4aac94d3fd16809ee413bc99294a085798a589dae51ddd4b',
-    },
-  ])
-  const expectRes = checkError(t, INVALID_PARAMS, 'finalized block not available')
-  await baseRequest(t, server, req, 200, expectRes)
-})
+      headBlockHash: '0x1d93f244823f80efbd9292a0d0d72a2b03df8cd5a9688c6c3779d26a7cc5009c',
+    }
+    const res = await rpc.request(method, [nonExistentHeadBlockHash, validPayloadAttributes])
 
-tape(`${method}: invalid safe block hash`, async (t) => {
-  const { server } = await setupChain(genesisJSON, 'post-merge', { engine: true })
-  const req = params(method, [
-    {
-      ...validForkChoiceState,
-      safeBlockHash: '0x3b8fb240d288781d4aac94d3fd16809ee413bc99294a085798a589dae51ddd4b',
-    },
-  ])
-  const expectRes = checkError(t, INVALID_PARAMS, 'safe block not available')
+    assert.equal(res.result.payloadStatus.status, 'SYNCING')
+    assert.equal(res.result.payloadStatus.latestValidHash, null)
+    assert.equal(res.result.payloadStatus.validationError, null)
+    assert.equal(res.result.payloadId, null)
+  })
 
-  await baseRequest(t, server, req, 200, expectRes)
-})
+  it('call with valid data and synced data', async () => {
+    const { server } = await setupChain(postMergeData, 'post-merge', { engine: true })
+    const rpc = getRPCClient(server)
+    const res = await rpc.request(method, validPayload)
+    assert.equal(res.result.payloadStatus.status, 'VALID')
+    assert.equal(
+      res.result.payloadStatus.latestValidHash,
+      '0x3b8fb240d288781d4aac94d3fd16809ee413bc99294a085798a589dae51ddd4a',
+    )
+    assert.equal(res.result.payloadStatus.validationError, null)
+    assert.notEqual(res.result.payloadId, null)
+  })
 
-tape(`${method}: latest block after reorg`, async (t) => {
-  const { server } = await setupChain(genesisJSON, 'post-merge', { engine: true })
-  let req = params(method, [validForkChoiceState])
-  let expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.status, 'VALID')
-  }
-  await baseRequest(t, server, req, 200, expectRes, false)
+  it('call with invalid timestamp payloadAttributes', async () => {
+    const { server } = await setupChain(postMergeData, 'post-merge', { engine: true })
+    const rpc = getRPCClient(server)
+    const invalidTimestampPayload = [
+      { ...validPayload[0] },
+      { ...validPayload[1], timestamp: '0x0' },
+    ]
 
-  await batchBlocks(t, server)
+    const res = await rpc.request(method, invalidTimestampPayload)
+    assert.equal(res.error.code, INVALID_PARAMS)
+    assert.ok(
+      res.error.message.includes('invalid timestamp in payloadAttributes, got 0, need at least 1'),
+    )
+  })
 
-  req = params(method, [
-    {
-      ...validForkChoiceState,
-      headBlockHash: blocks[2].blockHash,
-      safeBlockHash: blocks[0].blockHash,
-    },
-  ])
-  expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.status, 'VALID')
-  }
-  await baseRequest(t, server, req, 200, expectRes, false)
+  it('call with valid fork choice state without payload attributes', async () => {
+    const { server } = await setupChain(postMergeData, 'post-merge', { engine: true })
+    const rpc = getRPCClient(server)
+    const res = await rpc.request(method, [validForkChoiceState])
 
-  req = params(method, [
-    {
-      headBlockHash: blocks[1].blockHash,
-      safeBlockHash: blocks[2].blockHash,
-      finalizedBlockHash: blocks[2].blockHash,
-    },
-  ])
+    assert.equal(res.result.payloadStatus.status, 'VALID')
+    assert.equal(res.result.payloadStatus.latestValidHash, validForkChoiceState.headBlockHash)
+    assert.equal(res.result.payloadStatus.validationError, null)
+    assert.equal(res.result.payloadId, null)
+  })
 
-  expectRes = (res: any) => {
-    t.equal(res.body.result.payloadStatus.latestValidHash, blocks[1].blockHash)
-  }
-  await baseRequest(t, server, req, 200, expectRes)
-})
+  it('call with deep parent lookup', async () => {
+    const { server } = await setupChain(postMergeData, 'post-merge', { engine: true })
+    const rpc = getRPCClient(server)
+    let res = await rpc.request(method, [validForkChoiceState])
 
-tape('reset TD', (t) => {
-  td.reset()
-  BlockHeader.prototype._consensusFormatValidation = originalValidate
-  t.end()
+    assert.equal(res.result.payloadStatus.status, 'VALID')
+
+    for (let i = 0; i < 3; i++) {
+      const res = await rpc.request('engine_newPayloadV1', [beaconData[i]])
+      assert.equal(res.result.status, 'VALID')
+    }
+
+    // Now set the head to the last hash
+    res = await rpc.request(method, [
+      { ...validForkChoiceState, headBlockHash: beaconData[2].blockHash },
+    ])
+    assert.equal(res.result.payloadStatus.status, 'VALID')
+  })
+
+  it('call with deep parent lookup and with stored safe block hash', async () => {
+    const { server } = await setupChain(postMergeData, 'post-merge', { engine: true })
+    const rpc = getRPCClient(server)
+    let res = await rpc.request(method, [validForkChoiceState])
+
+    assert.equal(res.result.payloadStatus.status, 'VALID')
+
+    await batchBlocks(rpc, beaconData)
+
+    res = await rpc.request(method, [
+      {
+        ...validForkChoiceState,
+        headBlockHash: beaconData[2].blockHash,
+        safeBlockHash: beaconData[0].blockHash,
+      },
+    ])
+
+    assert.equal(res.result.payloadStatus.status, 'VALID')
+  })
+
+  it('unknown finalized block hash', async () => {
+    const { server } = await setupChain(postMergeData, 'post-merge', { engine: true })
+    const rpc = getRPCClient(server)
+    const res = await rpc.request(method, [
+      {
+        ...validForkChoiceState,
+        finalizedBlockHash: '0x3b8fb240d288781d4aac94d3fd16809ee413bc99294a085798a589dae51ddd4b',
+      },
+    ])
+    assert.equal(res.error.code, INVALID_FORKCHOICE_STATE)
+    assert.ok(res.error.message.includes('finalized block not available in canonical chain'))
+  })
+
+  it('invalid safe block hash', async () => {
+    const { server } = await setupChain(postMergeData, 'post-merge', { engine: true })
+    const rpc = getRPCClient(server)
+    const res = await rpc.request(method, [
+      {
+        ...validForkChoiceState,
+        safeBlockHash: '0x3b8fb240d288781d4aac94d3fd16809ee413bc99294a085798a589dae51ddd4b',
+      },
+    ])
+    assert.equal(res.error.code, INVALID_FORKCHOICE_STATE)
+    assert.ok(res.error.message.includes('safe block not available'))
+  })
+
+  it('latest block after reorg', async () => {
+    const { server, blockchain } = await setupChain(postMergeData, 'post-merge', {
+      engine: true,
+    })
+    const rpc = getRPCClient(server)
+    let res = await rpc.request(method, [validForkChoiceState])
+
+    assert.equal(res.result.payloadStatus.status, 'VALID')
+
+    await batchBlocks(rpc, beaconData)
+
+    res = await rpc.request(method, [
+      {
+        ...validForkChoiceState,
+        headBlockHash: beaconData[2].blockHash,
+        safeBlockHash: beaconData[0].blockHash,
+        finalizedBlockHash: bytesToHex(blockchain.genesisBlock.hash()),
+      },
+    ])
+
+    assert.equal(res.result.payloadStatus.status, 'VALID')
+
+    // check safe and finalized
+    res = await rpc.request('eth_getBlockByNumber', ['finalized', false])
+
+    assert.equal(res.result.number, '0x0', 'finalized should be set to genesis')
+
+    res = await rpc.request('eth_getBlockByNumber', ['safe', false])
+
+    assert.equal(res.result.number, '0x1', 'safe should be set to first block')
+
+    res = await rpc.request(method, [
+      {
+        headBlockHash: beaconData[1].blockHash,
+        safeBlockHash: beaconData[2].blockHash,
+        finalizedBlockHash: beaconData[2].blockHash,
+      },
+    ])
+
+    assert.equal(res.error.code, -32602)
+  })
+
+  it('validate safeBlockHash is part of canonical chain', async () => {
+    const { server, chain } = await setupChain(postMergeData, 'post-merge', { engine: true })
+    const rpc = getRPCClient(server)
+    const genesis = await chain.getBlock(BigInt(0))
+
+    // Build the payload for the canonical chain
+    const canonical = [genesis]
+
+    for (let i = 0; i < 2; i++) {
+      canonical.push(createBlockFromParent(canonical[canonical.length - 1]))
+    }
+
+    // Build an alternative payload
+    const reorg = [genesis]
+    for (let i = 0; i < 2; i++) {
+      reorg.push(createBlockFromParent(reorg[reorg.length - 1]))
+    }
+
+    const canonicalPayload = canonical.map(
+      (e) => blockToExecutionPayload(e, BigInt(0)).executionPayload,
+    )
+    const reorgPayload = reorg.map((e) => blockToExecutionPayload(e, BigInt(0)).executionPayload)
+
+    await batchBlocks(rpc, canonicalPayload.slice(1))
+    await batchBlocks(rpc, reorgPayload.slice(1))
+
+    // Safe block hash is not in the canonical chain
+    const res = await rpc.request(method, [
+      {
+        headBlockHash: reorgPayload[2].blockHash,
+        safeBlockHash: canonicalPayload[1].blockHash,
+        finalizedBlockHash: reorgPayload[1].blockHash,
+      },
+    ])
+
+    assert.equal(res.error.code, INVALID_FORKCHOICE_STATE)
+    assert.ok(res.error.message.includes('safe'))
+    assert.ok(res.error.message.includes('canonical'))
+  })
+
+  it('validate finalizedBlockHash is part of canonical chain', async () => {
+    const { server, chain } = await setupChain(postMergeData, 'post-merge', { engine: true })
+    const rpc = getRPCClient(server)
+    const genesis = await chain.getBlock(BigInt(0))
+
+    // Build the payload for the canonical chain
+    const canonical = [genesis]
+
+    for (let i = 0; i < 2; i++) {
+      canonical.push(createBlockFromParent(canonical[canonical.length - 1]))
+    }
+
+    // Build an alternative payload
+    const reorg = [genesis]
+    for (let i = 0; i < 2; i++) {
+      reorg.push(createBlockFromParent(reorg[reorg.length - 1]))
+    }
+
+    const canonicalPayload = canonical.map(
+      (e) => blockToExecutionPayload(e, BigInt(0)).executionPayload,
+    )
+    const reorgPayload = reorg.map((e) => blockToExecutionPayload(e, BigInt(0)).executionPayload)
+
+    await batchBlocks(rpc, canonicalPayload.slice(1))
+    await batchBlocks(rpc, reorgPayload.slice(1))
+
+    // Finalized block hash is not in the canonical chain
+    const res = await rpc.request(method, [
+      {
+        headBlockHash: reorgPayload[2].blockHash,
+        safeBlockHash: reorgPayload[1].blockHash,
+        finalizedBlockHash: canonicalPayload[1].blockHash,
+      },
+    ])
+
+    assert.equal(res.error.code, INVALID_FORKCHOICE_STATE)
+    assert.ok(res.error.message.includes('finalized'))
+    assert.ok(res.error.message.includes('canonical'))
+  })
 })

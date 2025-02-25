@@ -1,80 +1,134 @@
-import { FeeMarketEIP1559Transaction, Transaction } from '@ethereumjs/tx'
-import { bufferToHex } from '@ethereumjs/util'
-import * as tape from 'tape'
-
+import { Hardfork, createCommonFromGethGenesis } from '@ethereumjs/common'
+import { createBlob4844Tx, createFeeMarket1559Tx, createLegacyTx } from '@ethereumjs/tx'
 import {
-  baseRequest,
+  blobsToCommitments,
+  bytesToHex,
+  commitmentsToVersionedHashes,
+  getBlobs,
+  randomBytes,
+} from '@ethereumjs/util'
+import { trustedSetup } from '@paulmillr/trusted-setups/fast.js'
+import { KZG as microEthKZG } from 'micro-eth-signer/kzg'
+import { assert, describe, it } from 'vitest'
+
+import { powData } from '../../testdata/geth-genesis/pow.js'
+import {
   dummy,
+  getRPCClient,
   gethGenesisStartLondon,
-  params,
   runBlockWithTxs,
   setupChain,
-} from '../helpers'
+} from '../helpers.js'
 
-import pow = require('./../../testdata/geth-genesis/pow.json')
+import type { PrefixedHexString } from '@ethereumjs/util'
 
 const method = 'eth_getTransactionReceipt'
+const kzg = new microEthKZG(trustedSetup)
+describe(method, () => {
+  it('call with legacy tx', async () => {
+    const { chain, common, execution, server } = await setupChain(powData, 'pow')
+    const rpc = getRPCClient(server)
+    // construct tx
+    const tx = createLegacyTx(
+      {
+        gasLimit: 2000000,
+        gasPrice: 100,
+        to: '0x0000000000000000000000000000000000000000',
+      },
+      { common },
+    ).sign(dummy.privKey)
 
-tape(`${method}: call with legacy tx`, async (t) => {
-  const { chain, common, execution, server } = await setupChain(pow, 'pow')
+    await runBlockWithTxs(chain, execution, [tx])
 
-  // construct tx
-  const tx = Transaction.fromTxData(
-    {
-      gasLimit: 2000000,
-      gasPrice: 100,
-      to: '0x0000000000000000000000000000000000000000',
-    },
-    { common }
-  ).sign(dummy.privKey)
+    // get the tx
+    const res = await rpc.request(method, [bytesToHex(tx.hash())])
+    assert.equal(res.result.transactionHash, bytesToHex(tx.hash()), 'should return the correct tx')
+  })
 
-  await runBlockWithTxs(chain, execution, [tx])
+  it('call with 1559 tx', async () => {
+    const { chain, common, execution, server } = await setupChain(
+      gethGenesisStartLondon(powData),
+      'powLondon',
+    )
+    const rpc = getRPCClient(server)
+    // construct tx
+    const tx = createFeeMarket1559Tx(
+      {
+        gasLimit: 2000000,
+        maxFeePerGas: 975000000,
+        maxPriorityFeePerGas: 10,
+        to: '0x1230000000000000000000000000000000000321',
+      },
+      { common },
+    ).sign(dummy.privKey)
 
-  // get the tx
-  const req = params(method, [bufferToHex(tx.hash())])
-  const expectRes = (res: any) => {
-    const msg = 'should return the correct tx'
-    t.equal(res.body.result.transactionHash, bufferToHex(tx.hash()), msg)
-  }
-  await baseRequest(t, server, req, 200, expectRes)
-})
+    await runBlockWithTxs(chain, execution, [tx])
 
-tape(`${method}: call with 1559 tx`, async (t) => {
-  const { chain, common, execution, server } = await setupChain(
-    gethGenesisStartLondon(pow),
-    'powLondon'
-  )
+    // get the tx
+    const res = await rpc.request(method, [bytesToHex(tx.hash())])
 
-  // construct tx
-  const tx = FeeMarketEIP1559Transaction.fromTxData(
-    {
-      gasLimit: 2000000,
-      maxFeePerGas: 975000000,
-      maxPriorityFeePerGas: 10,
-      to: '0x1230000000000000000000000000000000000321',
-    },
-    { common }
-  ).sign(dummy.privKey)
+    assert.equal(res.result.transactionHash, bytesToHex(tx.hash()), 'should return the correct tx')
+    assert.equal(res.result.status, '0x1', 'transaction result is 1 since succeeded')
+  })
 
-  await runBlockWithTxs(chain, execution, [tx])
+  it('call with unknown tx hash', async () => {
+    const { server } = await setupChain(powData, 'pow')
+    const rpc = getRPCClient(server)
+    // get a random tx hash
+    const res = await rpc.request(method, [
+      '0x89ea5b54111befb936851660a72b686a21bc2fc4889a9a308196ff99d08925a0',
+    ])
+    assert.equal(res.result, null, 'should return null')
+  })
 
-  // get the tx
-  const req = params(method, [bufferToHex(tx.hash())])
-  const expectRes = (res: any) => {
-    const msg = 'should return the correct tx'
-    t.equal(res.body.result.transactionHash, bufferToHex(tx.hash()), msg)
-  }
-  await baseRequest(t, server, req, 200, expectRes)
-})
+  it('get blobGasUsed/blobGasPrice in blob tx receipt', async () => {
+    const isBrowser = new Function('try {return this===window;}catch(e){ return false;}')
+    if (isBrowser() === true) {
+      assert.ok(true)
+    } else {
+      const { hardfork4844Data } = await import('../../../../block/test/testdata/4844-hardfork.js')
 
-tape(`${method}: call with unknown tx hash`, async (t) => {
-  const { server } = await setupChain(pow, 'pow')
+      const common = createCommonFromGethGenesis(hardfork4844Data, {
+        chain: 'customChain',
+        hardfork: Hardfork.Cancun,
+        customCrypto: {
+          kzg,
+        },
+      })
+      const { chain, execution, server } = await setupChain(hardfork4844Data, 'customChain', {
+        customCrypto: { kzg },
+      })
+      common.setHardfork(Hardfork.Cancun)
+      const rpc = getRPCClient(server)
 
-  // get a random tx hash
-  const req = params(method, ['0x89ea5b54111befb936851660a72b686a21bc2fc4889a9a308196ff99d08925a0'])
-  const expectRes = (res: any) => {
-    const msg = 'should return null'
-    t.equal(res.body.result, null, msg)
-  }
-  await baseRequest(t, server, req, 200, expectRes)
+      const blobs = getBlobs('hello world')
+      const commitments = blobsToCommitments(kzg, blobs)
+      const blobVersionedHashes = commitmentsToVersionedHashes(commitments)
+      const proofs = blobs.map((blob, ctx) =>
+        kzg.computeBlobProof(blob, commitments[ctx]),
+      ) as PrefixedHexString[]
+      const tx = createBlob4844Tx(
+        {
+          blobVersionedHashes,
+          blobs,
+          kzgCommitments: commitments,
+          kzgProofs: proofs,
+          maxFeePerBlobGas: 1000000n,
+          gasLimit: 0xffffn,
+          maxFeePerGas: 10000000n,
+          maxPriorityFeePerGas: 1000000n,
+          to: randomBytes(20),
+          nonce: 0n,
+        },
+        { common },
+      ).sign(dummy.privKey)
+
+      await runBlockWithTxs(chain, execution, [tx], true)
+
+      const res = await rpc.request(method, [bytesToHex(tx.hash())])
+
+      assert.equal(res.result.blobGasUsed, '0x20000', 'receipt has correct blob gas usage')
+      assert.equal(res.result.blobGasPrice, '0x1', 'receipt has correct blob gas price')
+    }
+  })
 })

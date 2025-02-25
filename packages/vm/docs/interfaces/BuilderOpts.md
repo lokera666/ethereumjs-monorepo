@@ -17,11 +17,10 @@ Options for the block builder.
 - [calcDifficultyFromHeader](BuilderOpts.md#calcdifficultyfromheader)
 - [cliqueSigner](BuilderOpts.md#cliquesigner)
 - [common](BuilderOpts.md#common)
-- [consensusFormatValidation](BuilderOpts.md#consensusformatvalidation)
 - [freeze](BuilderOpts.md#freeze)
-- [hardforkByBlockNumber](BuilderOpts.md#hardforkbyblocknumber)
-- [hardforkByTTD](BuilderOpts.md#hardforkbyttd)
 - [putBlockIntoBlockchain](BuilderOpts.md#putblockintoblockchain)
+- [setHardfork](BuilderOpts.md#sethardfork)
+- [skipConsensusFormatValidation](BuilderOpts.md#skipconsensusformatvalidation)
 
 ## Properties
 
@@ -42,13 +41,13 @@ BlockOptions.calcDifficultyFromHeader
 
 #### Defined in
 
-packages/block/dist/types.d.ts:49
+block/dist/cjs/types.d.ts:41
 
 ___
 
 ### cliqueSigner
 
-• `Optional` **cliqueSigner**: `Buffer`
+• `Optional` **cliqueSigner**: `Uint8Array`
 
 Provide a clique signer's privateKey to seal this block.
 Will throw if provided on a non-PoA chain.
@@ -59,7 +58,7 @@ BlockOptions.cliqueSigner
 
 #### Defined in
 
-packages/block/dist/types.d.ts:66
+block/dist/cjs/types.d.ts:58
 
 ___
 
@@ -83,23 +82,7 @@ BlockOptions.common
 
 #### Defined in
 
-packages/block/dist/types.d.ts:23
-
-___
-
-### consensusFormatValidation
-
-• `Optional` **consensusFormatValidation**: `boolean`
-
-Perform consensus validation checks on header if set. Defaults to true.
-
-#### Inherited from
-
-BlockOptions.consensusFormatValidation
-
-#### Defined in
-
-packages/block/dist/types.d.ts:70
+block/dist/cjs/types.d.ts:22
 
 ___
 
@@ -112,7 +95,7 @@ strong additional security guarantees on the consistency of the block parameters
 It also enables block hash caching when the `hash()` method is called multiple times.
 
 If you need to deactivate the block freeze - e.g. because you want to subclass block and
-add aditional properties - it is strongly encouraged that you do the freeze yourself
+add additional properties - it is strongly encouraged that you do the freeze yourself
 within your code instead.
 
 Default: true
@@ -123,48 +106,7 @@ BlockOptions.freeze
 
 #### Defined in
 
-packages/block/dist/types.d.ts:61
-
-___
-
-### hardforkByBlockNumber
-
-• `Optional` **hardforkByBlockNumber**: `boolean`
-
-Determine the HF by the block number
-
-Default: `false` (HF is set to whatever default HF is set by the Common instance)
-
-#### Inherited from
-
-BlockOptions.hardforkByBlockNumber
-
-#### Defined in
-
-packages/block/dist/types.d.ts:29
-
-___
-
-### hardforkByTTD
-
-• `Optional` **hardforkByTTD**: `BigIntLike`
-
-Determine the HF by total difficulty (Merge HF)
-
-This option is a superset of `hardforkByBlockNumber` (so only use one of both options)
-and determines the HF by both the block number and the TD.
-
-Since the TTD is only a threshold the block number will in doubt take precedence (imagine
-e.g. both Merge and Shanghai HF blocks set and the block number from the block provided
-pointing to a Shanghai block: this will lead to set the HF as Shanghai and not the Merge).
-
-#### Inherited from
-
-BlockOptions.hardforkByTTD
-
-#### Defined in
-
-packages/block/dist/types.d.ts:40
+block/dist/cjs/types.d.ts:53
 
 ___
 
@@ -182,4 +124,42 @@ Default: true
 
 #### Defined in
 
-[packages/vm/src/types.ts:157](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L157)
+[vm/src/types.ts:171](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L171)
+
+___
+
+### setHardfork
+
+• `Optional` **setHardfork**: `boolean` \| `BigIntLike`
+
+Set the hardfork either by timestamp (for HFs from Shanghai onwards) or by block number
+for older Hfs.
+
+Additionally it is possible to pass in a specific TD value to support live-Merge-HF
+transitions. Note that this should only be needed in very rare and specific scenarios.
+
+Default: `false` (HF is set to whatever default HF is set by the Common instance)
+
+#### Inherited from
+
+BlockOptions.setHardfork
+
+#### Defined in
+
+block/dist/cjs/types.d.ts:32
+
+___
+
+### skipConsensusFormatValidation
+
+• `Optional` **skipConsensusFormatValidation**: `boolean`
+
+Skip consensus format validation checks on header if set. Defaults to false.
+
+#### Inherited from
+
+BlockOptions.skipConsensusFormatValidation
+
+#### Defined in
+
+block/dist/cjs/types.d.ts:62

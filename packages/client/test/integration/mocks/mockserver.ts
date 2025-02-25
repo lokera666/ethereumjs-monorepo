@@ -1,11 +1,11 @@
-import { Server } from '../../../lib/net/server'
-import { Event } from '../../../lib/types'
+import { Server } from '../../../src/net/server/index.js'
+import { Event } from '../../../src/types.js'
 
-import { MockPeer } from './mockpeer'
-import { createServer, destroyServer, servers } from './network'
+import { MockPeer } from './mockpeer.js'
+import { createServer, destroyServer, servers } from './network.js'
 
-import type { ServerOptions } from '../../../lib/net/server'
-import type { RemoteStream } from './network'
+import type { ServerOptions } from '../../../src/net/server/index.js'
+import type { RemoteStream } from './network.js'
 
 interface MockServerOptions extends ServerOptions {
   location?: string

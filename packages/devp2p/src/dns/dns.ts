@@ -1,17 +1,12 @@
-import { debug as createDebugLogger } from 'debug'
+import debugDefault from 'debug'
+import * as dns from 'dns'
 
-import { ENR } from './enr'
+import { ENR } from './enr.js'
 
-import type { PeerInfo } from '../dpt'
+import type { DNSOptions, PeerInfo } from '../types.js'
+import type { Common } from '@ethereumjs/common'
 
-let dns: any
-try {
-  dns = require('dns')
-} catch (e: any) {
-  dns = require('../browser/dns')
-}
-
-const debug = createDebugLogger('devp2p:dns:dns')
+const debug = debugDefault('devp2p:dns:dns')
 
 type SearchContext = {
   domain: string
@@ -19,26 +14,25 @@ type SearchContext = {
   visits: { [key: string]: boolean }
 }
 
-export type DNSOptions = {
-  /**
-   * ipv4 or ipv6 address of server to pass to native dns.setServers()
-   * Sets the IP address of servers to be used when performing
-   * DNS resolution.
-   * @type {string}
-   */
-  dnsServerAddress?: string
-}
-
 export class DNS {
-  private _DNSTreeCache: { [key: string]: string }
-  private readonly _errorTolerance: number = 10
+  protected _DNSTreeCache: { [key: string]: string }
+  protected readonly _errorTolerance: number = 10
+
+  protected _common?: Common
+
+  private DEBUG: boolean
 
   constructor(options: DNSOptions = {}) {
     this._DNSTreeCache = {}
 
     if (typeof options.dnsServerAddress === 'string') {
-      dns.setServers([options.dnsServerAddress])
+      dns.promises.setServers([options.dnsServerAddress])
     }
+
+    this._common = options.common
+
+    this.DEBUG =
+      typeof window === 'undefined' ? (process?.env?.DEBUG?.includes('ethjs') ?? false) : false
   }
 
   /**
@@ -48,7 +42,7 @@ export class DNS {
    * search exceeds `maxQuantity` plus the `errorTolerance` factor.
    *
    * @param {number}        maxQuantity  max number to get
-   * @param {string}        treeEntry enrtree string (See EIP-1459 for format)
+   * @param {string[]}        dnsNetworks enrTree strings (See EIP-1459 for format)
    * @return {PeerInfo}
    */
   async getPeers(maxQuantity: number, dnsNetworks: string[]): Promise<PeerInfo[]> {
@@ -68,8 +62,10 @@ export class DNS {
       const peer = await this._search(domain, context)
 
       if (this._isNewPeer(peer, peers)) {
-        peers.push(peer as PeerInfo)
-        debug(`got new peer candidate from DNS address=${peer!.address}`)
+        peers.push(peer)
+        if (this.DEBUG) {
+          debug(`got new peer candidate from DNS address=${peer.address}`)
+        }
       }
 
       totalSearches++
@@ -95,19 +91,21 @@ export class DNS {
     try {
       switch (this._getEntryType(entry)) {
         case ENR.ROOT_PREFIX:
-          next = ENR.parseAndVerifyRoot(entry, context.publicKey)
+          next = ENR.parseAndVerifyRoot(entry, context.publicKey, this._common)
           return await this._search(next, context)
         case ENR.BRANCH_PREFIX:
           branches = ENR.parseBranch(entry)
           next = this._selectRandomPath(branches, context)
           return await this._search(next, context)
         case ENR.RECORD_PREFIX:
-          return ENR.parseAndVerifyRecord(entry)
+          return ENR.parseAndVerifyRecord(entry, this._common)
         default:
           return null
       }
     } catch (error: any) {
-      debug(`Errored searching DNS tree at subdomain ${subdomain}: ${error}`)
+      if (this.DEBUG) {
+        debug(`Errored searching DNS tree at subdomain ${subdomain}: ${error}`)
+      }
       return null
     }
   }
@@ -131,7 +129,7 @@ export class DNS {
    *
    * @param {string[]}      branches
    * @param {SearchContext} context
-   * @return {String}       subdomian
+   * @return {String}       subdomain
    */
   private _selectRandomPath(branches: string[], context: SearchContext): string {
     // Identify domains already visited in this traversal of the DNS tree.
@@ -191,12 +189,13 @@ export class DNS {
    * Returns false if candidate peer already exists in the
    * current collection of peers.
    * Returns true otherwise.
+   * Also acts as a typeguard for peer
    *
    * @param  {PeerInfo}   peer
    * @param  {PeerInfo[]} peers
    * @return {boolean}
    */
-  private _isNewPeer(peer: PeerInfo | null, peers: PeerInfo[]): boolean {
+  private _isNewPeer(peer: PeerInfo | null, peers: PeerInfo[]): peer is PeerInfo {
     if (peer === null || peer.address === undefined) return false
 
     for (const existingPeer of peers) {

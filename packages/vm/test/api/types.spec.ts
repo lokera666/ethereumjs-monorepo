@@ -1,13 +1,13 @@
-import { Block } from '@ethereumjs/block'
-import { Chain, Common, Hardfork } from '@ethereumjs/common'
-import { AccessListEIP2930Transaction, Transaction } from '@ethereumjs/tx'
-import * as tape from 'tape'
+import { createBlock } from '@ethereumjs/block'
+import { Common, Hardfork, Mainnet } from '@ethereumjs/common'
+import { createAccessList2930Tx, createLegacyTx } from '@ethereumjs/tx'
+import { assert, describe, it } from 'vitest'
 
 import type { BlockData } from '@ethereumjs/block'
-import type { AccessListEIP2930TxData, TxData } from '@ethereumjs/tx'
+import type { AccessList2930TxData, TransactionType, TxData } from '@ethereumjs/tx'
 
-tape('[Types]', function (t) {
-  t.test('should ensure that the actual objects can be safely used as their data types', (st) => {
+describe('[Types]', () => {
+  it('should ensure that the actual objects can be safely used as their data types', () => {
     // Dev note:
     // This test was written by @alcuadrado after discovering
     // issues in creating an object from its own data. It will
@@ -18,27 +18,26 @@ tape('[Types]', function (t) {
     > &
       Pick<TypeT, OptionalFieldsT>
 
-    const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Berlin })
+    const common = new Common({ chain: Mainnet, hardfork: Hardfork.Berlin })
 
     // Block
-    const block: Omit<Required<BlockData>, 'withdrawals'> = Block.fromBlockData({}, { common })
-    st.ok(block, 'block')
+    const block = createBlock({}, { common }) as Omit<
+      Required<BlockData>,
+      'withdrawals' | 'executionWitness'
+    >
+    assert.ok(block, 'block')
 
     // Transactions
     type OptionalTxFields = 'to' | 'r' | 's' | 'v'
 
     // Legacy tx
-    const legacyTx: RequiredExceptOptionals<TxData, OptionalTxFields> = Transaction.fromTxData(
-      {},
-      { common }
-    )
-    st.ok(legacyTx, 'legacy tx')
+    const legacyTx: RequiredExceptOptionals<TxData[TransactionType.Legacy], OptionalTxFields> =
+      createLegacyTx({}, { common })
+    assert.ok(legacyTx, 'legacy tx')
 
     // Access List tx
-    const accessListTx: RequiredExceptOptionals<AccessListEIP2930TxData, OptionalTxFields> =
-      AccessListEIP2930Transaction.fromTxData({}, { common })
-    st.ok(accessListTx, 'accessList tx')
-
-    st.end()
+    const accessListTx: RequiredExceptOptionals<AccessList2930TxData, OptionalTxFields> =
+      createAccessList2930Tx({}, { common })
+    assert.ok(accessListTx, 'accessList tx')
   })
 })

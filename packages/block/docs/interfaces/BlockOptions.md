@@ -13,10 +13,9 @@ hardfork.
 - [calcDifficultyFromHeader](BlockOptions.md#calcdifficultyfromheader)
 - [cliqueSigner](BlockOptions.md#cliquesigner)
 - [common](BlockOptions.md#common)
-- [consensusFormatValidation](BlockOptions.md#consensusformatvalidation)
 - [freeze](BlockOptions.md#freeze)
-- [hardforkByBlockNumber](BlockOptions.md#hardforkbyblocknumber)
-- [hardforkByTTD](BlockOptions.md#hardforkbyttd)
+- [setHardfork](BlockOptions.md#sethardfork)
+- [skipConsensusFormatValidation](BlockOptions.md#skipconsensusformatvalidation)
 
 ## Properties
 
@@ -33,20 +32,20 @@ Note that this option has no effect on networks other than PoW/Ethash networks
 
 #### Defined in
 
-[types.ts:53](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L53)
+[types.ts:50](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L50)
 
 ___
 
 ### cliqueSigner
 
-• `Optional` **cliqueSigner**: `Buffer`
+• `Optional` **cliqueSigner**: `Uint8Array`
 
 Provide a clique signer's privateKey to seal this block.
 Will throw if provided on a non-PoA chain.
 
 #### Defined in
 
-[types.ts:70](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L70)
+[types.ts:67](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L67)
 
 ___
 
@@ -66,19 +65,7 @@ Current default hardfork: `merge`
 
 #### Defined in
 
-[types.ts:27](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L27)
-
-___
-
-### consensusFormatValidation
-
-• `Optional` **consensusFormatValidation**: `boolean`
-
-Perform consensus validation checks on header if set. Defaults to true.
-
-#### Defined in
-
-[types.ts:74](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L74)
+[types.ts:31](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L31)
 
 ___
 
@@ -91,44 +78,41 @@ strong additional security guarantees on the consistency of the block parameters
 It also enables block hash caching when the `hash()` method is called multiple times.
 
 If you need to deactivate the block freeze - e.g. because you want to subclass block and
-add aditional properties - it is strongly encouraged that you do the freeze yourself
+add additional properties - it is strongly encouraged that you do the freeze yourself
 within your code instead.
 
 Default: true
 
 #### Defined in
 
-[types.ts:65](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L65)
+[types.ts:62](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L62)
 
 ___
 
-### hardforkByBlockNumber
+### setHardfork
 
-• `Optional` **hardforkByBlockNumber**: `boolean`
+• `Optional` **setHardfork**: `boolean` \| `BigIntLike`
 
-Determine the HF by the block number
+Set the hardfork either by timestamp (for HFs from Shanghai onwards) or by block number
+for older Hfs.
+
+Additionally it is possible to pass in a specific TD value to support live-Merge-HF
+transitions. Note that this should only be needed in very rare and specific scenarios.
 
 Default: `false` (HF is set to whatever default HF is set by the Common instance)
 
 #### Defined in
 
-[types.ts:33](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L33)
+[types.ts:41](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L41)
 
 ___
 
-### hardforkByTTD
+### skipConsensusFormatValidation
 
-• `Optional` **hardforkByTTD**: `BigIntLike`
+• `Optional` **skipConsensusFormatValidation**: `boolean`
 
-Determine the HF by total difficulty (Merge HF)
-
-This option is a superset of `hardforkByBlockNumber` (so only use one of both options)
-and determines the HF by both the block number and the TD.
-
-Since the TTD is only a threshold the block number will in doubt take precedence (imagine
-e.g. both Merge and Shanghai HF blocks set and the block number from the block provided
-pointing to a Shanghai block: this will lead to set the HF as Shanghai and not the Merge).
+Skip consensus format validation checks on header if set. Defaults to false.
 
 #### Defined in
 
-[types.ts:44](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L44)
+[types.ts:71](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L71)

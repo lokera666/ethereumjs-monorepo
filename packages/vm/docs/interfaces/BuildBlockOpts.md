@@ -11,6 +11,7 @@ Options for building a block.
 - [blockOpts](BuildBlockOpts.md#blockopts)
 - [headerData](BuildBlockOpts.md#headerdata)
 - [parentBlock](BuildBlockOpts.md#parentblock)
+- [withdrawals](BuildBlockOpts.md#withdrawals)
 
 ## Properties
 
@@ -22,7 +23,7 @@ The block and builder options to use.
 
 #### Defined in
 
-[packages/vm/src/types.ts:178](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L178)
+[vm/src/types.ts:193](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L193)
 
 ___
 
@@ -35,7 +36,7 @@ Defaults used for any values not provided.
 
 #### Defined in
 
-[packages/vm/src/types.ts:173](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L173)
+[vm/src/types.ts:187](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L187)
 
 ___
 
@@ -47,4 +48,14 @@ The parent block
 
 #### Defined in
 
-[packages/vm/src/types.ts:167](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L167)
+[vm/src/types.ts:181](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L181)
+
+___
+
+### withdrawals
+
+• `Optional` **withdrawals**: `WithdrawalData`[]
+
+#### Defined in
+
+[vm/src/types.ts:189](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L189)

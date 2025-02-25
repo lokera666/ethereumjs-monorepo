@@ -1,6 +1,7 @@
 import { ConsensusAlgorithm } from '@ethereumjs/common'
+import { BIGINT_0 } from '@ethereumjs/util'
 
-import type { Consensus } from './interface'
+import type { Consensus } from '../types.js'
 import type { BlockHeader } from '@ethereumjs/block'
 
 /**
@@ -20,7 +21,10 @@ export class CasperConsensus implements Consensus {
   public async validateConsensus(): Promise<void> {}
 
   public async validateDifficulty(header: BlockHeader): Promise<void> {
-    if (header.difficulty !== BigInt(0)) {
+    // TODO: This is not really part of consensus validation and it should be analyzed
+    // if it is possible to replace by a more generic hardfork check between block and
+    // blockchain along adding new blocks or headers
+    if (header.difficulty !== BIGINT_0) {
       const msg = 'invalid difficulty.  PoS blocks must have difficulty 0'
       throw new Error(`${msg} ${header.errorStr()}`)
     }

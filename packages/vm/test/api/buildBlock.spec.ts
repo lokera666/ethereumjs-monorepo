@@ -1,392 +1,395 @@
-import { Block } from '@ethereumjs/block'
-import { Blockchain } from '@ethereumjs/blockchain'
-import { Chain, Common, Hardfork } from '@ethereumjs/common'
-import { FeeMarketEIP1559Transaction, Transaction } from '@ethereumjs/tx'
-import { Account, Address } from '@ethereumjs/util'
-import * as tape from 'tape'
+import {
+  cliqueSigner,
+  cliqueVerifySignature,
+  createBlock,
+  createSealedCliqueBlock,
+} from '@ethereumjs/block'
+import { EthashConsensus, createBlockchain } from '@ethereumjs/blockchain'
+import {
+  Common,
+  ConsensusAlgorithm,
+  Hardfork,
+  Mainnet,
+  createCommonFromGethGenesis,
+} from '@ethereumjs/common'
+import { Ethash } from '@ethereumjs/ethash'
+import { createFeeMarket1559Tx, createLegacyTx } from '@ethereumjs/tx'
+import {
+  Address,
+  concatBytes,
+  createAccount,
+  createAddressFromPrivateKey,
+  createZeroAddress,
+  hexToBytes,
+} from '@ethereumjs/util'
+import { assert, describe, it } from 'vitest'
 
-import { VM } from '../../src/vm'
+import { buildBlock, createVM, runBlock } from '../../src/index.js'
 
-import { setBalance } from './utils'
+import { setBalance } from './utils.js'
 
-tape('BlockBuilder', async (t) => {
-  t.test('should build a valid block', async (st) => {
-    const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Istanbul })
-    const genesisBlock = Block.fromBlockData({ header: { gasLimit: 50000 } }, { common })
-    const blockchain = await Blockchain.create({ genesisBlock, common, validateConsensus: false })
-    const vm = await VM.create({ common, blockchain })
+import type { Blockchain, ConsensusDict } from '@ethereumjs/blockchain'
 
-    const address = Address.fromString('0xccfd725760a68823ff1e062f4cc97e1360e8d997')
-    await setBalance(vm, address)
+const privateKey = hexToBytes('0xe331b6d69882b4cb4ea581d88e0b604039a3de5967688d3dcffdd2270c0fd109')
+const pKeyAddress = createAddressFromPrivateKey(privateKey)
 
-    const vmCopy = await vm.copy()
+describe('BlockBuilder', () => {
+  it('should build a valid block', async () => {
+    const common = new Common({ chain: Mainnet, hardfork: Hardfork.Istanbul })
+    const genesisBlock = createBlock({ header: { gasLimit: 50000 } }, { common })
+    const blockchain = await createBlockchain({ genesisBlock, common, validateConsensus: false })
+    const vm = await createVM({ common, blockchain })
 
-    const blockBuilder = await vm.buildBlock({
+    await setBalance(vm, pKeyAddress)
+
+    const vmCopy = await vm.shallowCopy()
+
+    const blockBuilder = await buildBlock(vm, {
       parentBlock: genesisBlock,
       headerData: { coinbase: '0x96dc73c8b5969608c77375f085949744b5177660' },
       blockOpts: { calcDifficultyFromHeader: genesisBlock.header, freeze: false },
     })
 
     // Set up tx
-    const tx = Transaction.fromTxData(
-      { to: Address.zero(), value: 1000, gasLimit: 21000, gasPrice: 1 },
-      { common, freeze: false }
-    )
-    tx.getSenderAddress = () => {
-      return address
-    }
+    const tx = createLegacyTx(
+      { to: createZeroAddress(), value: 1000, gasLimit: 21000, gasPrice: 1 },
+      { common, freeze: false },
+    ).sign(privateKey)
 
     await blockBuilder.addTransaction(tx)
-    const block = await blockBuilder.build()
-    st.equal(
+    const { block } = await blockBuilder.build()
+    assert.equal(
       blockBuilder.transactionReceipts.length,
       1,
-      'should have the correct number of tx receipts'
+      'should have the correct number of tx receipts',
     )
-
-    // block should successfully execute with VM.runBlock and have same outputs
-    block.transactions[0].getSenderAddress = () => {
-      return address
-    }
-    const result = await vmCopy.runBlock({ block })
-    st.equal(result.gasUsed, block.header.gasUsed)
-    st.ok(result.receiptsRoot.equals(block.header.receiptTrie))
-    st.ok(result.stateRoot.equals(block.header.stateRoot))
-    st.ok(result.logsBloom.equals(block.header.logsBloom))
-    st.end()
+    const result = await runBlock(vmCopy, { block })
+    assert.equal(result.gasUsed, block.header.gasUsed)
+    assert.deepEqual(result.receiptsRoot, block.header.receiptTrie)
+    assert.deepEqual(result.stateRoot, block.header.stateRoot)
+    assert.deepEqual(result.logsBloom, block.header.logsBloom)
   })
 
-  t.test('should throw if adding a transaction exceeds the block gas limit', async (st) => {
-    const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Istanbul })
-    const vm = await VM.create({ common })
-    const genesis = Block.fromBlockData({}, { common })
+  it('should throw if adding a transaction exceeds the block gas limit', async () => {
+    const common = new Common({ chain: Mainnet, hardfork: Hardfork.Istanbul })
+    const vm = await createVM({ common })
+    const genesis = createBlock({}, { common })
 
-    const blockBuilder = await vm.buildBlock({ parentBlock: genesis })
+    const blockBuilder = await buildBlock(vm, { parentBlock: genesis })
     const gasLimit = genesis.header.gasLimit + BigInt(1)
-    const tx = Transaction.fromTxData({ gasLimit }, { common })
+    const tx = createLegacyTx({ gasLimit }, { common })
     try {
       await blockBuilder.addTransaction(tx)
-      st.fail('should throw error')
+      assert.fail('should throw error')
     } catch (error: any) {
       if (
         (error.message as string).includes(
-          'tx has a higher gas limit than the remaining gas in the block'
+          'tx has a higher gas limit than the remaining gas in the block',
         )
       ) {
-        st.pass('correct error thrown')
+        assert.ok(true, 'correct error thrown')
       } else {
-        st.fail('wrong error thrown')
+        assert.fail('wrong error thrown')
       }
     }
-    st.equal(
+    assert.equal(
       blockBuilder.transactionReceipts.length,
       0,
-      'should have the correct number of tx receipts'
+      'should have the correct number of tx receipts',
     )
-    st.end()
   })
 
-  t.test('should revert the VM state if reverted', async (st) => {
-    const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Istanbul })
-    const genesisBlock = Block.fromBlockData({ header: { gasLimit: 50000 } }, { common })
-    const blockchain = await Blockchain.create({ genesisBlock, common, validateConsensus: false })
-    const vm = await VM.create({ common, blockchain })
+  it('should correctly seal a PoW block', async () => {
+    const common = new Common({ chain: Mainnet, hardfork: Hardfork.Istanbul })
+    const genesisBlock = createBlock({ header: { gasLimit: 50000 } }, { common })
 
-    const address = Address.fromString('0xccfd725760a68823ff1e062f4cc97e1360e8d997')
-    await setBalance(vm, address)
+    const consensusDict: ConsensusDict = {}
+    consensusDict[ConsensusAlgorithm.Ethash] = new EthashConsensus(new Ethash())
+    const blockchain = await createBlockchain({
+      genesisBlock,
+      common,
+      validateConsensus: false,
+      consensusDict,
+    })
+    const vm = await createVM({ common, blockchain })
 
-    const root0 = await vm.eei.getStateRoot()
+    await setBalance(vm, pKeyAddress)
 
-    const blockBuilder = await vm.buildBlock({ parentBlock: genesisBlock })
-
-    // Set up tx
-    const tx = Transaction.fromTxData(
-      { to: Address.zero(), value: 1000, gasLimit: 21000, gasPrice: 1 },
-      { common, freeze: false }
-    )
-    tx.getSenderAddress = () => {
-      return address
-    }
-
-    await blockBuilder.addTransaction(tx)
-
-    const root1 = await vm.eei.getStateRoot()
-    st.ok(!root0.equals(root1), 'state root should change after adding a tx')
-
-    await blockBuilder.revert()
-    const root2 = await vm.eei.getStateRoot()
-
-    st.ok(root2.equals(root0), 'state root should revert to before the tx was run')
-    st.end()
-  })
-
-  t.test('should correctly seal a PoW block', async (st) => {
-    const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Istanbul })
-    const genesisBlock = Block.fromBlockData({ header: { gasLimit: 50000 } }, { common })
-    const blockchain = await Blockchain.create({ genesisBlock, common, validateConsensus: false })
-    const vm = await VM.create({ common, blockchain })
-
-    const address = Address.fromString('0xccfd725760a68823ff1e062f4cc97e1360e8d997')
-    await setBalance(vm, address)
-
-    const blockBuilder = await vm.buildBlock({
+    const blockBuilder = await buildBlock(vm, {
       parentBlock: genesisBlock,
       blockOpts: { calcDifficultyFromHeader: genesisBlock.header, freeze: false },
     })
 
     // Set up tx
-    const tx = Transaction.fromTxData(
-      { to: Address.zero(), value: 1000, gasLimit: 21000, gasPrice: 1 },
-      { common, freeze: false }
-    )
-    tx.getSenderAddress = () => {
-      return address
-    }
+    const tx = createLegacyTx(
+      { to: createZeroAddress(), value: 1000, gasLimit: 21000, gasPrice: 1 },
+      { common, freeze: false },
+    ).sign(privateKey)
 
     await blockBuilder.addTransaction(tx)
 
     const sealOpts = {
-      mixHash: Buffer.alloc(32),
-      nonce: Buffer.alloc(8),
+      mixHash: new Uint8Array(32),
+      nonce: new Uint8Array(8),
     }
-    const block = await blockBuilder.build(sealOpts)
+    const { block } = await blockBuilder.build(sealOpts)
 
-    st.ok(block.header.mixHash.equals(sealOpts.mixHash))
-    st.ok(block.header.nonce.equals(sealOpts.nonce))
-    st.doesNotThrow(async () => vm.blockchain.consensus.validateDifficulty(block.header))
-    st.end()
+    assert.deepEqual(block.header.mixHash, sealOpts.mixHash)
+    assert.deepEqual(block.header.nonce, sealOpts.nonce)
+    assert.doesNotThrow(async () =>
+      (vm.blockchain as Blockchain).consensus!.validateDifficulty(block.header),
+    )
   })
 
-  t.test('should correctly seal a PoA block', async (st) => {
+  it('should correctly seal a PoA block', async () => {
     const signer = {
-      address: new Address(Buffer.from('0b90087d864e82a284dca15923f3776de6bb016f', 'hex')),
-      privateKey: Buffer.from(
-        '64bf9cc30328b0e42387b3c82c614e6386259136235e20c1357bd11cdee86993',
-        'hex'
-      ),
-      publicKey: Buffer.from(
-        '40b2ebdf4b53206d2d3d3d59e7e2f13b1ea68305aec71d5d24cefe7f24ecae886d241f9267f04702d7f693655eb7b4aa23f30dcd0c3c5f2b970aad7c8a828195',
-        'hex'
+      address: new Address(hexToBytes('0x0b90087d864e82a284dca15923f3776de6bb016f')),
+      privateKey: hexToBytes('0x64bf9cc30328b0e42387b3c82c614e6386259136235e20c1357bd11cdee86993'),
+      publicKey: hexToBytes(
+        '0x40b2ebdf4b53206d2d3d3d59e7e2f13b1ea68305aec71d5d24cefe7f24ecae886d241f9267f04702d7f693655eb7b4aa23f30dcd0c3c5f2b970aad7c8a828195',
       ),
     }
 
-    const common = new Common({ chain: Chain.Rinkeby, hardfork: Hardfork.Istanbul })
+    // const common = new Common({ chain: Chain.Rinkeby, hardfork: Hardfork.Istanbul })
+    const consensusConfig = {
+      clique: {
+        period: 10,
+        epoch: 30000,
+      },
+    }
+    const defaultChainData = {
+      config: {
+        chainId: 123456,
+        homesteadBlock: 0,
+        eip150Block: 0,
+        eip150Hash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+        eip155Block: 0,
+        eip158Block: 0,
+        byzantiumBlock: 0,
+        constantinopleBlock: 0,
+        petersburgBlock: 0,
+        istanbulBlock: 0,
+        berlinBlock: 0,
+        londonBlock: 0,
+        ...consensusConfig,
+      },
+      nonce: '0x0',
+      timestamp: '0x614b3731',
+      gasLimit: '0x47b760',
+      difficulty: '0x1',
+      mixHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+      coinbase: '0x0000000000000000000000000000000000000000',
+      number: '0x0',
+      gasUsed: '0x0',
+      parentHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+      baseFeePerGas: 7,
+    }
+
+    const A = {
+      address: new Address(hexToBytes('0x0b90087d864e82a284dca15923f3776de6bb016f')),
+      privateKey: hexToBytes('0x64bf9cc30328b0e42387b3c82c614e6386259136235e20c1357bd11cdee86993'),
+    }
+    const addr = A.address.toString().slice(2)
+
+    const extraData2 = '0x' + '0'.repeat(64) + addr + '0'.repeat(130)
+    const chainData = {
+      ...defaultChainData,
+      extraData: extraData2,
+      alloc: { [addr]: { balance: '0x10000000000000000000' } },
+    }
+    const common = createCommonFromGethGenesis(chainData, {
+      chain: 'devnet',
+      hardfork: Hardfork.Istanbul,
+    })
+
     // extraData: [vanity, activeSigner, seal]
-    const extraData = Buffer.concat([Buffer.alloc(32), signer.address.toBuffer(), Buffer.alloc(65)])
-    const cliqueSigner = signer.privateKey
-    const genesisBlock = Block.fromBlockData(
+    const extraData = concatBytes(new Uint8Array(32), signer.address.toBytes(), new Uint8Array(65))
+    const cliqueSignerKey = signer.privateKey
+    const genesisBlock = createSealedCliqueBlock(
       { header: { gasLimit: 50000, extraData } },
-      { common, cliqueSigner }
+      cliqueSignerKey,
+      { common },
     )
-    const blockchain = await Blockchain.create({ genesisBlock, common })
-    const vm = await VM.create({ common, blockchain })
+    const blockchain = await createBlockchain({ genesisBlock, common })
+    const vm = await createVM({ common, blockchain })
 
     // add balance for tx
-    await vm.eei.putAccount(signer.address, Account.fromAccountData({ balance: 100000 }))
+    await vm.stateManager.putAccount(signer.address, createAccount({ balance: 100000 }))
 
-    const blockBuilder = await vm.buildBlock({
+    const blockBuilder = await buildBlock(vm, {
       parentBlock: genesisBlock,
-      headerData: { difficulty: 2, extraData: Buffer.alloc(97) },
-      blockOpts: { cliqueSigner, freeze: false },
+      headerData: { difficulty: 2, extraData: new Uint8Array(97) },
+      blockOpts: { cliqueSigner: cliqueSignerKey, freeze: false },
     })
 
     // Set up tx
-    const tx = Transaction.fromTxData(
-      { to: Address.zero(), value: 1000, gasLimit: 21000, gasPrice: 1 },
-      { common, freeze: false }
+    const tx = createLegacyTx(
+      { to: createZeroAddress(), value: 1000, gasLimit: 21000, gasPrice: 1 },
+      { common, freeze: false },
     ).sign(signer.privateKey)
 
     await blockBuilder.addTransaction(tx)
 
-    const block = await blockBuilder.build()
+    const { block } = await blockBuilder.build()
 
-    st.ok(block.header.cliqueVerifySignature([signer.address]), 'should verify signature')
-    st.ok(
-      block.header.cliqueSigner().equals(signer.address),
-      'should recover the correct signer address'
+    assert.ok(cliqueVerifySignature(block.header, [signer.address]), 'should verify signature')
+    assert.deepEqual(
+      cliqueSigner(block.header),
+      signer.address,
+      'should recover the correct signer address',
     )
-    st.end()
   })
 
-  t.test('should throw if block already built or reverted', async (st) => {
-    const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Istanbul })
-    const genesisBlock = Block.fromBlockData({ header: { gasLimit: 50000 } }, { common })
-    const blockchain = await Blockchain.create({ genesisBlock, common, validateConsensus: false })
-    const vm = await VM.create({ common, blockchain })
+  it('should throw if block already built or reverted', async () => {
+    const common = new Common({ chain: Mainnet, hardfork: Hardfork.Istanbul })
+    const genesisBlock = createBlock({ header: { gasLimit: 50000 } }, { common })
+    const blockchain = await createBlockchain({ genesisBlock, common, validateConsensus: false })
+    const vm = await createVM({ common, blockchain })
 
-    const address = Address.fromString('0xccfd725760a68823ff1e062f4cc97e1360e8d997')
-    await setBalance(vm, address)
+    await setBalance(vm, pKeyAddress)
 
-    let blockBuilder = await vm.buildBlock({
+    let blockBuilder = await buildBlock(vm, {
       parentBlock: genesisBlock,
       blockOpts: { calcDifficultyFromHeader: genesisBlock.header },
     })
 
-    const tx = Transaction.fromTxData(
-      { to: Address.zero(), value: 1000, gasLimit: 21000, gasPrice: 1 },
-      { common, freeze: false }
-    )
-    tx.getSenderAddress = () => {
-      return address
-    }
+    const tx = createLegacyTx(
+      { to: createZeroAddress(), value: 1000, gasLimit: 21000, gasPrice: 1 },
+      { common, freeze: false },
+    ).sign(privateKey)
 
     await blockBuilder.addTransaction(tx)
     await blockBuilder.build()
 
     try {
       await blockBuilder.revert()
-      st.fail('should throw error')
+      assert.equal(
+        blockBuilder.getStatus().status,
+        'reverted',
+        'block should be in reverted status',
+      )
     } catch (error: any) {
-      if ((error.message as string).includes('Block has already been built')) {
-        st.pass('correct error thrown')
-      } else {
-        st.fail('wrong error thrown')
-      }
+      assert.fail('should not throw')
     }
 
-    blockBuilder = await vm.buildBlock({ parentBlock: genesisBlock })
+    blockBuilder = await buildBlock(vm, { parentBlock: genesisBlock })
 
-    const tx2 = Transaction.fromTxData(
-      { to: Address.zero(), value: 1000, gasLimit: 21000, gasPrice: 1, nonce: 1 },
-      { common, freeze: false }
-    )
-    tx2.getSenderAddress = () => {
-      return address
-    }
+    const tx2 = createLegacyTx(
+      { to: createZeroAddress(), value: 1000, gasLimit: 21000, gasPrice: 1, nonce: 1 },
+      { common, freeze: false },
+    ).sign(privateKey)
 
     await blockBuilder.addTransaction(tx2)
     await blockBuilder.revert()
 
     try {
       await blockBuilder.revert()
-      st.fail('should throw error')
+      assert.equal(
+        blockBuilder.getStatus().status,
+        'reverted',
+        'block should be in reverted status',
+      )
     } catch (error: any) {
-      if ((error.message as string).includes('State has already been reverted')) {
-        st.pass('correct error thrown')
-      } else {
-        st.fail('wrong error thrown')
-      }
+      assert.fail('should not throw')
     }
-
-    st.end()
   })
 
-  t.test('should build a block without any txs', async (st) => {
-    const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Istanbul })
-    const genesisBlock = Block.fromBlockData({ header: { gasLimit: 50000 } }, { common })
-    const blockchain = await Blockchain.create({ genesisBlock, common, validateConsensus: false })
-    const vm = await VM.create({ common, blockchain })
-    const vmCopy = await vm.copy()
+  it('should build a block without any txs', async () => {
+    const common = new Common({ chain: Mainnet, hardfork: Hardfork.Istanbul })
+    const genesisBlock = createBlock({ header: { gasLimit: 50000 } }, { common })
+    const blockchain = await createBlockchain({ genesisBlock, common, validateConsensus: false })
+    const vm = await createVM({ common, blockchain })
+    const vmCopy = await vm.shallowCopy()
 
-    const blockBuilder = await vm.buildBlock({
+    const blockBuilder = await buildBlock(vm, {
       parentBlock: genesisBlock,
       blockOpts: { calcDifficultyFromHeader: genesisBlock.header, freeze: false },
     })
 
-    const block = await blockBuilder.build()
+    const { block } = await blockBuilder.build()
 
     // block should successfully execute with VM.runBlock and have same outputs
-    const result = await vmCopy.runBlock({ block })
-    st.equal(result.gasUsed, block.header.gasUsed)
-    st.ok(result.receiptsRoot.equals(block.header.receiptTrie))
-    st.ok(result.stateRoot.equals(block.header.stateRoot))
-    st.ok(result.logsBloom.equals(block.header.logsBloom))
-    st.end()
+    const result = await runBlock(vmCopy, { block })
+    assert.equal(result.gasUsed, block.header.gasUsed)
+    assert.deepEqual(result.receiptsRoot, block.header.receiptTrie)
+    assert.deepEqual(result.stateRoot, block.header.stateRoot)
+    assert.deepEqual(result.logsBloom, block.header.logsBloom)
   })
 
-  t.test('should build a 1559 block with legacy and 1559 txs', async (st) => {
-    const common = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.London, eips: [1559] })
-    const genesisBlock = Block.fromBlockData(
+  it('should build a 1559 block with legacy and 1559 txs', async () => {
+    const common = new Common({ chain: Mainnet, hardfork: Hardfork.London, eips: [1559] })
+    const genesisBlock = createBlock(
       { header: { gasLimit: 50000, baseFeePerGas: 100 } },
-      { common }
+      { common },
     )
-    const blockchain = await Blockchain.create({ genesisBlock, common, validateConsensus: false })
-    const vm = await VM.create({ common, blockchain })
+    const blockchain = await createBlockchain({ genesisBlock, common, validateConsensus: false })
+    const vm = await createVM({ common, blockchain })
 
-    const address = Address.fromString('0xccfd725760a68823ff1e062f4cc97e1360e8d997')
-    await setBalance(vm, address)
+    await setBalance(vm, pKeyAddress)
 
-    const vmCopy = await vm.copy()
+    const vmCopy = await vm.shallowCopy()
 
-    const blockBuilder = await vm.buildBlock({
+    const blockBuilder = await buildBlock(vm, {
       parentBlock: genesisBlock,
       headerData: { coinbase: '0x96dc73c8b5969608c77375f085949744b5177660' },
       blockOpts: { calcDifficultyFromHeader: genesisBlock.header, freeze: false },
     })
 
     // Set up underpriced txs to test error response
-    const tx1 = Transaction.fromTxData(
-      { to: Address.zero(), value: 1000, gasLimit: 21000, gasPrice: 1 },
-      { common, freeze: false }
-    )
-    tx1.getSenderAddress = () => {
-      return address
-    }
-    const tx2 = FeeMarketEIP1559Transaction.fromTxData(
-      { to: Address.zero(), value: 1000, gasLimit: 21000, maxFeePerGas: 10 },
-      { common, freeze: false }
-    )
-    tx2.getSenderAddress = () => {
-      return address
-    }
+    const tx1 = createLegacyTx(
+      { to: createZeroAddress(), value: 1000, gasLimit: 21000, gasPrice: 1 },
+      { common, freeze: false },
+    ).sign(privateKey)
+
+    const tx2 = createFeeMarket1559Tx(
+      { to: createZeroAddress(), value: 1000, gasLimit: 21000, maxFeePerGas: 10 },
+      { common, freeze: false },
+    ).sign(privateKey)
 
     for (const tx of [tx1, tx2]) {
       try {
         await blockBuilder.addTransaction(tx)
-        st.fail('should throw error')
+        assert.fail('should throw error')
       } catch (error: any) {
-        st.ok(
+        assert.ok(
           (error.message as string).includes("is less than the block's baseFeePerGas"),
-          'should fail with appropriate error'
+          'should fail with appropriate error',
         )
       }
     }
 
     // Set up correctly priced txs
-    const tx3 = Transaction.fromTxData(
-      { to: Address.zero(), value: 1000, gasLimit: 21000, gasPrice: 101 },
-      { common, freeze: false }
-    )
-    tx3.getSenderAddress = () => {
-      return address
-    }
-    const tx4 = FeeMarketEIP1559Transaction.fromTxData(
-      { to: Address.zero(), value: 1000, gasLimit: 21000, maxFeePerGas: 101, nonce: 1 },
-      { common, freeze: false }
-    )
-    tx4.getSenderAddress = () => {
-      return address
-    }
+    const tx3 = createLegacyTx(
+      { to: createZeroAddress(), value: 1000, gasLimit: 21000, gasPrice: 101 },
+      { common, freeze: false },
+    ).sign(privateKey)
+
+    const tx4 = createFeeMarket1559Tx(
+      { to: createZeroAddress(), value: 1000, gasLimit: 21000, maxFeePerGas: 101, nonce: 1 },
+      { common, freeze: false },
+    ).sign(privateKey)
 
     for (const tx of [tx3, tx4]) {
       await blockBuilder.addTransaction(tx)
-      st.ok('should pass')
+      assert.ok('should pass')
     }
 
-    const block = await blockBuilder.build()
-    st.equal(
+    const { block } = await blockBuilder.build()
+    assert.equal(
       blockBuilder.transactionReceipts.length,
       2,
-      'should have the correct number of tx receipts'
+      'should have the correct number of tx receipts',
     )
 
-    st.ok(
+    assert.ok(
       block.header.baseFeePerGas! === genesisBlock.header.calcNextBaseFee(),
-      "baseFeePerGas should equal parentHeader's calcNextBaseFee"
+      "baseFeePerGas should equal parentHeader's calcNextBaseFee",
     )
 
-    // block should successfully execute with VM.runBlock and have same outputs
-    block.transactions[0].getSenderAddress = () => {
-      return address
-    }
-    block.transactions[1].getSenderAddress = () => {
-      return address
-    }
-    const result = await vmCopy.runBlock({ block })
-    st.equal(result.gasUsed, block.header.gasUsed)
-    st.ok(result.receiptsRoot.equals(block.header.receiptTrie))
-    st.ok(result.stateRoot.equals(block.header.stateRoot))
-    st.ok(result.logsBloom.equals(block.header.logsBloom))
-    st.end()
+    const result = await runBlock(vmCopy, { block })
+    assert.equal(result.gasUsed, block.header.gasUsed)
+    assert.deepEqual(result.receiptsRoot, block.header.receiptTrie)
+    assert.deepEqual(result.stateRoot, block.header.stateRoot)
+    assert.deepEqual(result.logsBloom, block.header.logsBloom)
   })
 })

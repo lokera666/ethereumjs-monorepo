@@ -12,48 +12,35 @@ This library bundles different components for lower-level peer-to-peer connectio
 
 - Distributed Peer Table (DPT) / v4 Node Discovery / DNS Discovery
 - RLPx Transport Protocol
-- Ethereum Wire Protocol (ETH/66)
-- Light Ethereum Subprotocol (LES/4)
+- Ethereum Wire Protocol (ETH/68)
 
-## Run/Build
+## Usage
 
-To build the `dist/` directory, run:
-
-```shell
-npm run build
-```
-
-You can also use `ts-node` to run a script without first transpiling to js (you need to `npm i --save-dev ts-node` first):
-
-```shell
-node -r ts-node/register [YOUR_SCRIPT_TO_RUN.ts]
-```
-
-## Usage/Examples
-
-All components of this library are implemented as Node `EventEmitter` objects
+All components of this library have a public `events` property containing a Node.js `EventEmitter` object
 and make heavy use of the Node.js network stack.
 
 You can react on events from the network like this:
 
-```typescript
-dpt.on('peer:added', (peer) => {
-  // Do something...
-})
+```ts
+// ./examples/peer-communication.ts#L65-L65
+
+dpt.events.on('error', (err) => console.error(chalk.red(`DPT error: ${err}`)))
 ```
+
+## Examples
 
 Basic example to connect to some bootstrap nodes and get basic peer info:
 
-- [simple](examples/simple.ts)
+- [simple](examples/simple.cts)
 
 Communicate with peers to read new transaction and block information:
 
-- [peer-communication](examples/peer-communication.ts)
+- [peer-communication](examples/peer-communication.cts)
 
 Run an example with:
 
 ```
-DEBUG=devp2p:* node -r ts-node/register ./examples/peer-communication.ts
+DEBUG=ethjs,devp2p:* node -r tsx/register ./examples/peer-communication.cts
 ```
 
 ## Docs
@@ -72,20 +59,39 @@ includes node discovery ([./src/dpt/server.ts](./src/dpt/server.ts))
 
 Create your peer table:
 
-```typescript
-const dpt = new DPT(Buffer.from(PRIVATE_KEY, 'hex'), {
-  endpoint: {
-    address: '0.0.0.0',
-    udpPort: null,
-    tcpPort: null,
-  },
-})
+```ts
+// examples/dpt.ts
+
+import { DPT } from '@ethereumjs/devp2p'
+import { bytesToHex, hexToBytes } from '@ethereumjs/util'
+
+const PRIVATE_KEY = hexToBytes('0xed6df2d4b7e82d105538e4a1279925a16a84e772243e80a561e1b201f2e78220')
+const main = async () => {
+  const dpt = new DPT(PRIVATE_KEY, {
+    endpoint: {
+      address: '0.0.0.0',
+      udpPort: null,
+      tcpPort: null,
+    },
+  })
+  console.log(`DPT is active and has id - ${bytesToHex(dpt.id!)}`)
+  // Should log the DPT's hex ID - 0xcd80bb7a768432302d267729c15da61d172373ea036...
+  dpt.destroy()
+}
+
+void main()
 ```
 
 Add some bootstrap nodes (or some custom nodes with `dpt.addPeer()`):
 
-```typescript
-dpt.bootstrap(bootnode).catch((err) => console.error('Something went wrong!'))
+```ts
+// ./examples/peer-communication.ts#L321-L325
+
+
+for (const bootnode of BOOTNODES) {
+  dpt.bootstrap(bootnode).catch((err) => {
+    console.error(chalk.bold.red(`DPT bootstrap error: ${err.stack ?? err}`))
+  })
 ```
 
 ### API
@@ -115,7 +121,7 @@ Creates new DPT object
 
 #### `dpt.bootstrap(peer)` (`async`)
 
-Uses a peer as new bootstrap peer and calls `findNeighbouts`.
+Uses a peer as new bootstrap peer and calls `findNeighbours`.
 
 - `peer` - Peer to be added, format `{ address: [ADDRESS], udpPort: [UDPPORT], tcpPort: [TCPPORT] }`.
 
@@ -153,21 +159,30 @@ Connect to a peer, organize the communication, see [./src/rlpx/](./src/rlpx/)
 ### Usage
 
 Instantiate an [@ethereumjs/common](https://github.com/ethereumjs/ethereumjs-monorepo/tree/master/packages/common)
-instance with the network you want to connect to:
+instance with the network you want to connect to and then create an `RLPx` object:
 
-```typescript
-const common = new Common({ chain: Chain.Mainnet })
-```
+```ts
+// ./examples/rlpx.ts
 
-Create your `RLPx` object, e.g.:
+import { Common, Mainnet } from '@ethereumjs/common'
+import { ETH, RLPx } from '@ethereumjs/devp2p'
+import { hexToBytes } from '@ethereumjs/util'
 
-```typescript
-const rlpx = new devp2p.RLPx(PRIVATE_KEY, {
-  dpt,
-  maxPeers: 25,
-  capabilities: [devp2p.ETH.eth65, devp2p.ETH.eth64],
-  common,
-})
+const main = async () => {
+  const common = new Common({ chain: Mainnet })
+  const PRIVATE_KEY = hexToBytes(
+    '0xed6df2d4b7e82d105538e4a1279925a16a84e772243e80a561e1b201f2e78220',
+  )
+  const rlpx = new RLPx(PRIVATE_KEY, {
+    maxPeers: 25,
+    capabilities: [ETH.eth65, ETH.eth64],
+    common,
+  })
+  console.log(`RLPx is active - ${rlpx._isAlive()}`)
+  rlpx.destroy()
+}
+
+void main()
 ```
 
 ### API
@@ -225,21 +240,31 @@ Upper layer protocol for exchanging Ethereum network data like block headers or 
 Send the initial status message with `sendStatus()`, then wait for the corresponding `status` message
 to arrive to start the communication.
 
-```typescript
-eth.once('status', () => {
-  // Send an initial message
-  eth.sendMessage()
+```ts
+// ./examples/peer-communication.ts#L96-L106
+
+eth.sendStatus({
+  td: intToBytes(17179869184), // total difficulty in genesis block
+  bestHash: hexToBytes('0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3'),
+  genesisHash: hexToBytes('0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3'),
 })
+
+// check CHECK_BLOCK
+let forkDrop: NodeJS.Timeout
+let forkVerified = false
+eth.events.once('status', () => {
+  eth.sendMessage(devp2p.ETH.MESSAGE_CODES.GET_BLOCK_HEADERS, [
 ```
 
 Wait for follow-up messages to arrive, send your responses.
 
-```typescript
-eth.on('message', async (code, payload) => {
-  if (code === devp2p.ETH.MESSAGE_CODES.NEW_BLOCK_HASHES) {
-    // Do something with your new block hashes :-)
-  }
-})
+```ts
+// ./examples/peer-communication.ts#L116-L119
+
+eth.events.on('message', async (code: any, payload: any) => {
+  // We keep track of how many of each message type are received
+  if (code in requests.msgTypes) {
+    requests.msgTypes[code]++
 ```
 
 See the `peer-communication.ts` example for a more detailed use case.
@@ -285,64 +310,31 @@ Events emitted:
 
 - [Ethereum wire protocol](https://github.com/ethereum/wiki/wiki/Ethereum-Wire-Protocol)
 
-## Light Ethereum Subprotocol (LES)
+#### Hybrid CJS/ESM Builds
 
-Upper layer protocol used by light clients, see [./src/protocol/les/](./src/protocol/les/).
+With the breaking releases from Summer 2023 we have started to ship our libraries with both CommonJS (`cjs` folder) and ESM builds (`esm` folder), see `package.json` for the detailed setup.
 
-### Usage
+If you use an ES6-style `import` in your code files from the ESM build will be used:
 
-Send the initial status message with `sendStatus()`, then wait for the corresponding `status` message
-to arrive to start the communication.
-
-```typescript
-les.once('status', () => {
-  // Send an initial message
-  les.sendMessage()
-})
+```ts
+import { EthereumJSClass } from '@ethereumjs/[PACKAGE_NAME]'
 ```
 
-Wait for follow-up messages to arrive, send your responses.
+If you use Node.js specific `require`, the CJS build will be used:
 
-```typescript
-les.on('message', async (code, payload) => {
-  if (code === devp2p.LES.MESSAGE_CODES.BLOCK_HEADERS) {
-    // Do something with your new block headers :-)
-  }
-})
+```ts
+const { EthereumJSClass } = require('@ethereumjs/[PACKAGE_NAME]')
 ```
 
-See the `peer-communication-les.ts` example for a more detailed use case.
+Using ESM will give you additional advantages over CJS beyond browser usage like static code analysis / Tree Shaking which CJS can not provide.
 
-### API
+### Buffer -> Uint8Array
 
-#### `LES` (extends `EventEmitter`)
+With the breaking releases from Summer 2023 we have removed all Node.js specific `Buffer` usages from our libraries and replace these with [Uint8Array](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array) representations, which are available both in Node.js and the browser (`Buffer` is a subclass of `Uint8Array`).
 
-Handles the different message types like `BLOCK_HEADERS` or `GET_PROOFS_V2` (see `MESSAGE_CODES`) for
-a complete list. Currently protocol version `LES/2` running in client-mode is supported.
+We have converted existing Buffer conversion methods to Uint8Array conversion methods in the [@ethereumjs/util](https://github.com/ethereumjs/ethereumjs-monorepo/tree/master/packages/util) `bytes` module, see the respective README section for guidance.
 
-##### `new LES(privateKey, options)`
-
-Normally not instantiated directly but created as a `SubProtocol` in the `Peer` object.
-
-- `version` - The protocol version for communicating, e.g. `2`.
-- `peer` - `Peer` object to communicate with.
-- `send` - Wrapped `peer.sendMessage()` function where the communication is routed to.
-
-#### `les.sendStatus(status)`
-
-Send initial status message.
-
-- `status` - Status message to send, format `{ headTd: TOTAL_DIFFICULTY_BUFFER, headHash: HEAD_HASH_BUFFER, headNum: HEAD_NUM_BUFFER, genesisHash: GENESIS_HASH_BUFFER }`, `networkId` (respectively `chainId`) is taken from the `Common` instance
-
-#### `les.sendMessage(code, reqId, payload)`
-
-Send initial status message.
-
-- `code` - The message code, see `MESSAGE_CODES` for available message types.
-- `reqId` - Request ID, will be echoed back on response.
-- `payload` - Payload as a list, will be rlp-encoded.
-
-#### BigInt Support
+### BigInt Support
 
 Starting with v4 the usage of [BN.js](https://github.com/indutny/bn.js/) for big numbers has been removed from the library and replaced with the usage of the native JS [BigInt](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/BigInt) data type (introduced in `ES2020`).
 
@@ -361,35 +353,16 @@ Events emitted:
 
 - [Light client protocol](https://ethereum.org/en/developers/docs/nodes-and-clients/#light-node)
 
-## Browser
-
-While it's possible to bundle this package for the browser, some features do not work:
-
-- EIP-1459 (DNS Peer Discovery) is disabled due to the absence of a standard polyfill for Node's `dns`
-  module. DNS discovery mode can be toggled on/off via the DPTOption `shouldGetDnsPeers` ("false"
-  by default).
-
-## Tests
-
-There are unit tests in the `test/` directory which can be run with:
-
-```shell
-npm run test
-```
-
 ## Debugging
 
 ### Introduction
 
 This library uses the [debug](https://github.com/visionmedia/debug) debugging utility package.
 
-For the debugging output to show up, set the `DEBUG` environment variable (e.g. in Linux/Mac OS:
-`export DEBUG=*,-babel`).
-
-Use the `DEBUG` environment variable to active the logger output you are interested in, e.g.:
+Use the `DEBUG` environment variable to activate the logger output you are interested in, e.g.:
 
 ```shell
-DEBUG=devp2p:dpt:\*,devp2p:eth node -r ts-node/register [YOUR_SCRIPT_TO_RUN.ts]
+DEBUG=ethjs,devp2p:dpt:\*,devp2p:eth node -r tsx/register [YOUR_SCRIPT_TO_RUN.ts]
 ```
 
 The following loggers are available:
@@ -403,16 +376,20 @@ The following loggers are available:
 | `devp2p:rlpx`         | General RLPx debug logger                                                                |
 | `devp2p:rlpx:peer`    | RLPx peer message exchange logging (`PING`, `PONG`, `HELLO`, `DISCONNECT`,... messages)  |
 | `devp2p:eth`          | ETH protocol message logging (`STATUS`, `GET_BLOCK_HEADER`, `TRANSACTIONS`,... messages) |
-| `devp2p:les`          | LES protocol message logging (`STATUS`, `GET_BLOCK_HEADER`, `GET_PROOFS`,... messages)   |
+
+`ethjs` **must** be included in the `DEBUG` environment variables to enable **any** logs.
+Additional log selections can be added with a comma separated list (no spaces). Logs with extensions can be enabled with a colon `:`, and `*` can be used to include all extensions.
+
+`DEBUG=ethjs,devp2p:dns:dns,devp2p:dpt:*,devp2p:rlpx:peer npx vitest test/dns.spec.ts`
 
 ### Debug Verbosity
 
 For more verbose output on logging (e.g. to output the entire msg payload) use the `verbose` logger
 in addition:
 
-DEBUG=devp2p:dpt:\*,devp2p:eth,verbose node -r ts-node/register [YOUR_SCRIPT_TO_RUN.ts]
+DEBUG=ethjs,devp2p:dpt:\*,devp2p:eth,verbose node -r tsx/register [YOUR_SCRIPT_TO_RUN.ts]
 
-Exemplary logging output:
+Example logging output:
 
 ```shell
 Add peer: 52.3.158.184:30303 Geth/v1.7.3-unstable-479aa61f/linux-amd64/go1.9 (eth63) (total: 2)
@@ -439,10 +416,10 @@ Available messages can be added to the logger base name to filter on a per messa
 on two message names along `ETH` protocol debugging:
 
 ```shell
-DEBUG=devp2p:eth:GET_BLOCK_HEADERS,devp2p:eth:BLOCK_HEADERS -r ts-node/register [YOUR_SCRIPT_TO_RUN.ts]
+DEBUG=ethjs,devp2p:eth:GET_BLOCK_HEADERS,devp2p:eth:BLOCK_HEADERS -r tsx/register [YOUR_SCRIPT_TO_RUN.ts]
 ```
 
-Exemplary logging output:
+Example logging output:
 
 ```shell
 devp2p:eth:GET_BLOCK_HEADERS Received GET_BLOCK_HEADERS message from 207.154.201.177:30303: d188659b37d8e321bc52c782198181c08080 +50ms
@@ -461,15 +438,15 @@ There are the following ways to limit debug output to a certain peer:
 Log output can be limited to one or several certain IPs. This can be useful to follow on the message exchange with a certain remote peer (e.g. a bootstrap peer):
 
 ```shell
-DEBUG=devp2p:3.209.45.79 -r ts-node/register [YOUR_SCRIPT_TO_RUN.ts]
+DEBUG=ethjs,devp2p:3.209.45.79 -r tsx/register [YOUR_SCRIPT_TO_RUN.ts]
 ```
 
 #### First Connected
 
-Logging can be limited to the peer the first successful subprotocol (e.g. `ETH`) connection could be established:
+Logging can be limited to the peer with which the first successful subprotocol (e.g. `ETH`) connection could be established:
 
 ```shell
-DEBUG=devp2p:FIRST_PEER -r ts-node/register [YOUR_SCRIPT_TO_RUN.ts]
+DEBUG=ethjs,devp2p:FIRST_PEER -r tsx/register [YOUR_SCRIPT_TO_RUN.ts]
 ```
 
 This logger can be used in various practical scenarios if you want to concentrate on the message exchange with just one peer.
@@ -488,7 +465,7 @@ The following is a list of major implementations of the `devp2p` stack in other 
 
 - Python: [pydevp2p](https://github.com/ethereum/pydevp2p)
 - Go: [Go Ethereum](https://github.com/ethereum/go-ethereum/tree/master/p2p)
-- Elixir: [Exthereum](https://github.com/exthereum/exth_crypto)
+- Elixir: [Exthereum](https://github.com/exthereum/exth_crypto) <!-- cspell:disable-line --->
 
 ### Links
 
