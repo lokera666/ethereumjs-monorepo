@@ -1,508 +1,600 @@
 import { RLP } from '@ethereumjs/rlp'
-import * as tape from 'tape'
+import { assert, describe, it } from 'vitest'
 
 import {
   Account,
-  bufferToBigInt,
+  KECCAK256_NULL,
+  KECCAK256_RLP,
+  Units,
+  accountBodyFromSlim,
+  accountBodyToRLP,
+  accountBodyToSlim,
+  bigIntToUnpaddedBytes,
+  bytesToBigInt,
+  bytesToHex,
+  createAccount,
+  createAccountFromBytesArray,
+  createAccountFromRLP,
+  createPartialAccount,
+  createPartialAccountFromRLP,
+  equalsBytes,
   generateAddress,
   generateAddress2,
+  hexToBytes,
   importPublic,
+  intToBytes,
+  intToHex,
+  intToUnpaddedBytes,
   isValidAddress,
   isValidChecksumAddress,
   isValidPrivate,
   isValidPublic,
+  padToEven,
   privateToAddress,
   privateToPublic,
   publicToAddress,
-  toBuffer,
+  toBytes,
   toChecksumAddress,
-} from '../src'
+  utf8ToBytes,
+} from '../src/index.js'
 
-const eip1014Testdata = require('./testdata/eip1014Examples.json')
+import { eip1404ExamplesData } from './testdata/eip1014Examples.js'
+
+import type { AccountBodyBytes, AccountData, PrefixedHexString } from '../src/index.js'
+import type { Input } from '@ethereumjs/rlp'
 
 const _0n = BigInt(0)
 
-tape('Account', function (t) {
-  t.test('empty constructor', function (st) {
+describe('Account', () => {
+  it('empty constructor', () => {
     const account = new Account()
-    st.equal(account.nonce, _0n, 'should have zero nonce')
-    st.equal(account.balance, _0n, 'should have zero balance')
-    st.equal(
-      account.storageRoot.toString('hex'),
-      '56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
-      'should have storageRoot equal to KECCAK256_RLP'
+    assert.equal(account.nonce, _0n, 'should have zero nonce')
+    assert.equal(account.balance, _0n, 'should have zero balance')
+    assert.equal(
+      bytesToHex(account.storageRoot),
+      '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
+      'should have storageRoot equal to KECCAK256_RLP',
     )
-    st.equal(
-      account.codeHash.toString('hex'),
-      'c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
-      'should have codeHash equal to KECCAK256_NULL'
+    assert.equal(
+      bytesToHex(account.codeHash),
+      '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
+      'should have codeHash equal to KECCAK256_NULL',
     )
-    st.end()
   })
 
-  t.test('from Array data', function (st) {
-    const raw = [
+  it('from Array data', () => {
+    const raw: PrefixedHexString[] = [
       '0x02', // nonce
       '0x0384', // balance
       '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421', // storageRoot
       '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470', // codeHash
     ]
-    const account = Account.fromValuesArray(raw.map(toBuffer))
-    st.equal(account.nonce, BigInt(2), 'should have correct nonce')
-    st.equal(account.balance, BigInt(900), 'should have correct balance')
-    st.equal(
-      account.storageRoot.toString('hex'),
-      '56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
-      'should have correct storageRoot'
+    const account = createAccountFromBytesArray(raw.map((el) => hexToBytes(el)))
+
+    assert.equal(account.nonce, BigInt(2), 'should have correct nonce')
+    assert.equal(account.balance, BigInt(900), 'should have correct balance')
+    assert.equal(
+      bytesToHex(account.storageRoot),
+      '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
+      'should have correct storageRoot',
     )
-    st.equal(
-      account.codeHash.toString('hex'),
-      'c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
-      'should have correct codeHash'
+    assert.equal(
+      bytesToHex(account.codeHash),
+      '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
+      'should have correct codeHash',
     )
-    st.end()
   })
 
-  t.test('from Object data', function (st) {
-    const raw = {
+  it('from Object data', () => {
+    const raw: AccountData = {
       nonce: '0x02',
       balance: '0x0384',
       storageRoot: '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
       codeHash: '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
     }
-    const account = Account.fromAccountData(raw)
-    st.equal(account.nonce, BigInt(2), 'should have correct nonce')
-    st.equal(account.balance, BigInt(900), 'should have correct balance')
-    st.equal(
-      account.storageRoot.toString('hex'),
-      '56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
-      'should have correct storageRoot'
+    const account = createAccount(raw)
+    assert.equal(account.nonce, BigInt(2), 'should have correct nonce')
+    assert.equal(account.balance, BigInt(900), 'should have correct balance')
+    assert.equal(
+      bytesToHex(account.storageRoot),
+      '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
+      'should have correct storageRoot',
     )
-    st.equal(
-      account.codeHash.toString('hex'),
-      'c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
-      'should have correct codeHash'
+    assert.equal(
+      bytesToHex(account.codeHash),
+      '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
+      'should have correct codeHash',
     )
-    st.end()
   })
 
-  t.test('from RLP data', function (st) {
-    const accountRlp = Buffer.from(
-      'f84602820384a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a0c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
-      'hex'
+  it('from RLP data', () => {
+    const accountRlp = hexToBytes(
+      '0xf84602820384a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a0c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
     )
-    const account = Account.fromRlpSerializedAccount(accountRlp)
-    st.equal(account.nonce, BigInt(2), 'should have correct nonce')
-    st.equal(account.balance, BigInt(900), 'should have correct balance')
-    st.equal(
-      account.storageRoot.toString('hex'),
-      '56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
-      'should have correct storageRoot'
+    const account = createAccountFromRLP(accountRlp)
+    assert.equal(account.nonce, BigInt(2), 'should have correct nonce')
+    assert.equal(account.balance, BigInt(900), 'should have correct balance')
+    assert.equal(
+      bytesToHex(account.storageRoot),
+      '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
+      'should have correct storageRoot',
     )
-    st.equal(
-      account.codeHash.toString('hex'),
-      'c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
-      'should have correct codeHash'
+    assert.equal(
+      bytesToHex(account.codeHash),
+      '0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
+      'should have correct codeHash',
     )
-    st.end()
   })
 
-  t.test('serialize', function (st) {
-    const raw = {
+  it('serialize', () => {
+    const raw: AccountData = {
       nonce: '0x01',
       balance: '0x42',
       storageRoot: '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
       codeHash: '0xc5d2461236f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
     }
-    const account = Account.fromAccountData(raw)
-    const accountRlp = Buffer.from(
-      RLP.encode([raw.nonce, raw.balance, raw.storageRoot, raw.codeHash])
-    )
-    st.ok(account.serialize().equals(accountRlp), 'should serialize correctly')
-    st.end()
+    const account = createAccount(raw)
+    const accountRlp = RLP.encode([raw.nonce, raw.balance, raw.storageRoot, raw.codeHash] as Input)
+
+    assert.ok(equalsBytes(account.serialize(), accountRlp), 'should serialize correctly')
   })
 
-  t.test('isContract', function (st) {
-    const accountRlp = Buffer.from(
-      'f84602820384a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a0c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
-      'hex'
+  it('isContract', () => {
+    const accountRlp = hexToBytes(
+      '0xf84602820384a056e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421a0c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
     )
-    let account = Account.fromRlpSerializedAccount(accountRlp)
-    st.notOk(account.isContract(), 'should return false for a non-contract account')
+    let account = createAccountFromRLP(accountRlp)
+    assert.notOk(account.isContract(), 'should return false for a non-contract account')
 
-    const raw = {
+    const raw: AccountData = {
       nonce: '0x01',
       balance: '0x0042',
       storageRoot: '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
       codeHash: '0xc5d2461236f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470',
     }
-    account = Account.fromAccountData(raw)
-    st.ok(account.isContract(), 'should return true for a contract account')
-    st.end()
+    account = createAccount(raw)
+    assert.ok(account.isContract(), 'should return true for a contract account')
   })
 
-  t.test('isEmpty', function (st) {
+  it('isEmpty', () => {
     let account = new Account()
-    st.ok(account.isEmpty(), 'should return true for an empty account')
+    assert.ok(account.isEmpty(), 'should return true for an empty account')
 
-    const raw = {
+    const raw: AccountData = {
       nonce: '0x01',
       balance: '0x0042',
       storageRoot: '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
       codeHash: '0xd748bf26ab37599c944babfdbeecf6690801bd61bf2670efb0a34adfc6dca10b',
     }
-    account = Account.fromAccountData(raw)
-    st.notOk(account.isEmpty(), 'should return false for a non-empty account')
-    st.end()
+    account = createAccount(raw)
+    assert.notOk(account.isEmpty(), 'should return false for a non-empty account')
   })
 
-  t.test('validation', function (st) {
-    st.throws(() => {
-      new Account(undefined, undefined, Buffer.from('hey'), undefined)
-    }, 'should only accept length 32 buffer for storageRoot')
+  it('validation', () => {
+    assert.throws(
+      () => {
+        new Account(undefined, undefined, hexToBytes('0xaaaa'), undefined)
+      },
+      undefined,
+      undefined,
+      'should only accept length 32 buffer for storageRoot',
+    )
 
-    st.throws(() => {
-      new Account(undefined, undefined, undefined, Buffer.from('hey'))
-    }, 'should only accept length 32 buffer for codeHash')
+    assert.throws(
+      () => {
+        new Account(undefined, undefined, undefined, hexToBytes('0xaaaa'))
+      },
+      undefined,
+      undefined,
+      'should only accept length 32 buffer for codeHash',
+    )
 
     const data = { balance: BigInt(5) }
-    st.throws(() => {
-      Account.fromRlpSerializedAccount(data as any)
-    }, 'should only accept an array in fromRlpSerializedAccount')
+    assert.throws(
+      () => {
+        createAccountFromRLP(data as any)
+      },
+      undefined,
+      undefined,
+      'should only accept an array in fromRlpSerializedAccount',
+    )
 
-    st.throws(() => {
-      new Account(BigInt(-5))
-    }, 'should not accept nonce less than 0')
+    assert.throws(
+      () => {
+        new Account(BigInt(-5))
+      },
+      undefined,
+      undefined,
+      'should not accept nonce less than 0',
+    )
 
-    st.throws(() => {
-      new Account(undefined, BigInt(-5))
-    }, 'should not accept balance less than 0')
-    st.end()
+    assert.throws(
+      () => {
+        new Account(undefined, BigInt(-5))
+      },
+      undefined,
+      undefined,
+      'should not accept balance less than 0',
+    )
   })
 })
 
-tape('Utility Functions', function (t) {
-  t.test('isValidPrivate', function (st) {
+describe('Utility Functions', () => {
+  it('isValidPrivate', () => {
     const SECP256K1_N = BigInt('0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141')
 
-    let tmp = '0011223344'
-    st.notOk(isValidPrivate(Buffer.from(tmp, 'hex')), 'should fail on short input')
+    assert.notOk(isValidPrivate(hexToBytes('0x0011223344')), 'should fail on short input')
 
-    tmp =
-      '3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d'
-    st.notOk(isValidPrivate(Buffer.from(tmp, 'hex')), 'should fail on too big input')
-
-    st.notOk(
-      isValidPrivate((<unknown>'WRONG_INPUT_TYPE') as Buffer),
-      'should fail on wrong input type'
+    assert.notOk(
+      isValidPrivate(
+        hexToBytes(
+          '0x3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
+        ),
+      ),
+      'should fail on too big input',
     )
 
-    tmp = '0000000000000000000000000000000000000000000000000000000000000000'
-    st.notOk(isValidPrivate(Buffer.from(tmp, 'hex')), 'should fail on invalid curve (zero)')
+    assert.notOk(
+      isValidPrivate((<unknown>'WRONG_INPUT_TYPE') as Uint8Array),
+      'should fail on wrong input type',
+    )
 
-    tmp = SECP256K1_N.toString(16)
-    st.notOk(isValidPrivate(Buffer.from(tmp, 'hex')), 'should fail on invalid curve (== N)')
+    assert.notOk(
+      isValidPrivate(
+        hexToBytes('0x0000000000000000000000000000000000000000000000000000000000000000'),
+      ),
+      'should fail on invalid curve (zero)',
+    )
 
-    tmp = (SECP256K1_N + BigInt(1)).toString(16)
-    st.notOk(isValidPrivate(Buffer.from(tmp, 'hex')), 'should fail on invalid curve (>= N)')
+    assert.notOk(
+      isValidPrivate(hexToBytes(`0x${SECP256K1_N.toString(16)}`)),
+      'should fail on invalid curve (== N)',
+    )
 
-    tmp = (SECP256K1_N - BigInt(1)).toString(16)
-    st.ok(isValidPrivate(Buffer.from(tmp, 'hex')), 'should work otherwise (< N)')
-    st.end()
+    assert.notOk(
+      isValidPrivate(hexToBytes(`0x${(SECP256K1_N + BigInt(1)).toString(16)}`)),
+      'should fail on invalid curve (>= N)',
+    )
+
+    assert.ok(
+      isValidPrivate(hexToBytes(`0x${(SECP256K1_N - BigInt(1)).toString(16)}`)),
+      'should work otherwise (< N)',
+    )
   })
 
-  t.test('isValidPublic', function (st) {
-    let pubKey = Buffer.from(
-      '3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae744',
-      'hex'
+  it('isValidPublic', () => {
+    let pubKey = hexToBytes(
+      '0x3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae744',
     )
-    st.notOk(isValidPublic(pubKey), 'should fail on too short input')
+    assert.notOk(isValidPublic(pubKey), 'should fail on too short input')
 
-    pubKey = Buffer.from(
-      '3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d00',
-      'hex'
+    pubKey = hexToBytes(
+      '0x3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d00',
     )
-    st.notOk(isValidPublic(pubKey), 'should fail on too big input')
+    assert.notOk(isValidPublic(pubKey), 'should fail on too big input')
 
-    pubKey = Buffer.from(
-      '043a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
-      'hex'
+    pubKey = hexToBytes(
+      '0x043a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
     )
-    st.notOk(isValidPublic(pubKey), 'should fail on SEC1 key')
+    assert.notOk(isValidPublic(pubKey), 'should fail on SEC1 key')
 
-    pubKey = Buffer.from(
-      '043a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
-      'hex'
+    pubKey = hexToBytes(
+      '0x043a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
     )
-    st.ok(isValidPublic(pubKey, true), "shouldn't fail on SEC1 key wt.testh sant.testize enabled")
-
-    pubKey = Buffer.from(
-      '023a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
-      'hex'
-    )
-    st.notOk(isValidPublic(pubKey), 'should fail wt.testh an invalid SEC1 public key')
-
-    pubKey = Buffer.from(
-      '03fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f',
-      'hex'
-    )
-    st.notOk(isValidPublic(pubKey), 'should fail an invalid 33-byte public key')
-
-    pubKey = Buffer.from(
-      'fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f0000000000000000000000000000000000000000000000000000000000000001',
-      'hex'
-    )
-    st.notOk(isValidPublic(pubKey), 'should fail an invalid 64-byte public key')
-
-    pubKey = Buffer.from(
-      '04fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f0000000000000000000000000000000000000000000000000000000000000001',
-      'hex'
-    )
-    st.notOk(isValidPublic(pubKey, true), 'should fail an invalid 65-byte public key')
-
-    pubKey = Buffer.from(
-      '033a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a',
-      'hex'
-    )
-    st.ok(
+    assert.ok(
       isValidPublic(pubKey, true),
-      'should work wt.testh compressed keys wt.testh sant.testize enabled'
+      "shouldn't fail on SEC1 key wt.testh sant.testize enabled", // cspell:disable-line
     )
 
-    pubKey = Buffer.from(
-      '043a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
-      'hex'
+    pubKey = hexToBytes(
+      '0x023a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
     )
-    st.ok(isValidPublic(pubKey, true), 'should work wt.testh sant.testize enabled')
+    assert.notOk(isValidPublic(pubKey), 'should fail wt.testh an invalid SEC1 public key') // cspell:disable-line
 
-    pubKey = Buffer.from(
-      '3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
-      'hex'
+    pubKey = hexToBytes('0x03fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f')
+    assert.notOk(isValidPublic(pubKey), 'should fail an invalid 33-byte public key')
+
+    pubKey = hexToBytes(
+      '0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f0000000000000000000000000000000000000000000000000000000000000001',
     )
-    st.ok(isValidPublic(pubKey), 'should work otherwise')
+    assert.notOk(isValidPublic(pubKey), 'should fail an invalid 64-byte public key')
 
-    pubKey =
-      '3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d' as any
-    try {
-      isValidPublic((<unknown>pubKey) as Buffer)
-    } catch (err: any) {
-      st.ok(
-        err.message.includes('This method only supports Buffer'),
-        'should throw if input is not Buffer'
-      )
-    }
-    st.end()
-  })
+    pubKey = hexToBytes(
+      '0x04fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f0000000000000000000000000000000000000000000000000000000000000001',
+    )
+    assert.notOk(isValidPublic(pubKey, true), 'should fail an invalid 65-byte public key')
 
-  t.test('importPublic', function (st) {
-    const pubKey =
-      '3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d'
-
-    let tmp =
-      '3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d'
-    st.equal(
-      importPublic(Buffer.from(tmp, 'hex')).toString('hex'),
-      pubKey,
-      'should work wt.testh an Ethereum public key'
+    pubKey = hexToBytes('0x033a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a')
+    assert.ok(
+      isValidPublic(pubKey, true),
+      'should work wt.testh compressed keys wt.testh sant.testize enabled', // cspell:disable-line
     )
 
-    tmp =
-      '043a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d'
-    st.equal(
-      importPublic(Buffer.from(tmp, 'hex')).toString('hex'),
-      pubKey,
-      'should work wt.testh uncompressed SEC1 keys'
+    pubKey = hexToBytes(
+      '0x043a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
     )
+    assert.ok(isValidPublic(pubKey, true), 'should work wt.testh sant.testize enabled') // cspell:disable-line
 
-    tmp = '033a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a'
-    st.equal(
-      importPublic(Buffer.from(tmp, 'hex')).toString('hex'),
-      pubKey,
-      'should work wt.testh compressed SEC1 keys'
+    pubKey = hexToBytes(
+      '0x3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
     )
-
-    st.throws(function () {
-      importPublic((<unknown>pubKey) as Buffer)
-    }, 'should throw if input is not Buffer')
-    st.end()
-  })
-
-  t.test('publicToAddress', function (st) {
-    let pubKey = Buffer.from(
-      '3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
-      'hex'
-    )
-    let address = '2f015c60e0be116b1f0cd534704db9c92118fb6a'
-    let r = publicToAddress(pubKey)
-    st.equal(r.toString('hex'), address, 'should produce an address given a public key')
-
-    pubKey = Buffer.from(
-      '043a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
-      'hex'
-    )
-    address = '2f015c60e0be116b1f0cd534704db9c92118fb6a'
-    r = publicToAddress(pubKey, true)
-    st.equal(r.toString('hex'), address, 'should produce an address given a SEC1 public key')
-
-    pubKey = Buffer.from(
-      '023a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
-      'hex'
-    )
-    st.throws(function () {
-      publicToAddress(pubKey, true)
-    }, "shouldn't produce an address given an invalid SEC1 public key")
-
-    pubKey = Buffer.from(
-      '3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae744',
-      'hex'
-    )
-    st.throws(function () {
-      publicToAddress(pubKey)
-    }, "shouldn't produce an address given an invalid public key")
+    assert.ok(isValidPublic(pubKey), 'should work otherwise')
 
     pubKey =
       '0x3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d' as any
-    st.throws(function () {
-      publicToAddress(pubKey)
-    }, 'should throw if input is not a buffer')
-    st.end()
+    try {
+      isValidPublic((<unknown>pubKey) as Uint8Array)
+    } catch (err: any) {
+      assert.ok(
+        err.message.includes('This method only supports Uint8Array'),
+        'should throw if input is not Uint8Array',
+      )
+    }
   })
 
-  t.test('privateToPublic', function (st) {
+  it('importPublic', () => {
     const pubKey =
-      '3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d'
-    let privateKey = Buffer.from(
-      'ea54bdc52d163f88c93ab0615782cf718a2efb9e51a7989aab1b08067e9c1c5f',
-      'hex'
+      '0x3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d'
+
+    assert.equal(
+      bytesToHex(
+        importPublic(
+          hexToBytes(
+            '0x3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
+          ),
+        ),
+      ),
+      pubKey,
+      'should work wt.testh an Ethereum public key', // cspell:disable-line
+    )
+
+    assert.equal(
+      bytesToHex(
+        importPublic(
+          hexToBytes(
+            '0x043a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
+          ),
+        ),
+      ),
+      pubKey,
+      'should work wt.testh uncompressed SEC1 keys', // cspell:disable-line
+    )
+
+    assert.equal(
+      bytesToHex(
+        importPublic(
+          hexToBytes('0x033a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a'),
+        ),
+      ),
+      pubKey,
+      'should work wt.testh compressed SEC1 keys', // cspell:disable-line
+    )
+
+    assert.throws(
+      function () {
+        importPublic((<unknown>pubKey) as Uint8Array)
+      },
+      undefined,
+      undefined,
+      'should throw if input is not Uint8Array',
+    )
+  })
+
+  it('publicToAddress', () => {
+    let pubKey = hexToBytes(
+      '0x3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
+    )
+    let address = '0x2f015c60e0be116b1f0cd534704db9c92118fb6a'
+    let r = publicToAddress(pubKey)
+    assert.equal(bytesToHex(r), address, 'should produce an address given a public key')
+
+    pubKey = hexToBytes(
+      '0x043a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
+    )
+    address = '0x2f015c60e0be116b1f0cd534704db9c92118fb6a'
+    r = publicToAddress(pubKey, true)
+    assert.equal(bytesToHex(r), address, 'should produce an address given a SEC1 public key')
+
+    pubKey = hexToBytes(
+      '0x023a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d',
+    )
+    assert.throws(
+      function () {
+        publicToAddress(pubKey, true)
+      },
+      undefined,
+      undefined,
+      "shouldn't produce an address given an invalid SEC1 public key",
+    )
+
+    pubKey = hexToBytes(
+      '0x3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae744',
+    )
+    assert.throws(
+      function () {
+        publicToAddress(pubKey)
+      },
+      undefined,
+      undefined,
+      "shouldn't produce an address given an invalid public key",
+    )
+
+    pubKey =
+      '0x3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d' as any
+    assert.throws(
+      function () {
+        publicToAddress(pubKey)
+      },
+      undefined,
+      undefined,
+      'should throw if input is not a Uint8Array',
+    )
+  })
+
+  it('privateToPublic', () => {
+    const pubKey =
+      '0x3a443d8381a6798a70c6ff9304bdc8cb0163c23211d11628fae52ef9e0dca11a001cf066d56a8156fc201cd5df8a36ef694eecd258903fca7086c1fae7441e1d'
+    let privateKey = hexToBytes(
+      '0xea54bdc52d163f88c93ab0615782cf718a2efb9e51a7989aab1b08067e9c1c5f',
     )
     const r = privateToPublic(privateKey)
-    st.equal(r.toString('hex'), pubKey, 'should produce a public key given a private key')
+    assert.equal(bytesToHex(r), pubKey, 'should produce a public key given a private key')
 
-    privateKey = Buffer.from(
-      'ea54bdc52d163f88c93ab0615782cf718a2efb9e51a7989aab1b08067e9c1c5f2a',
-      'hex'
+    privateKey = hexToBytes('0xea54bdc52d163f88c93ab0615782cf718a2efb9e51a7989aab1b08067e9c1c5f2a')
+    assert.throws(
+      function () {
+        privateToPublic(privateKey)
+      },
+      undefined,
+      undefined,
+      "shouldn't produce a public key given an invalid private key",
     )
-    st.throws(function () {
-      privateToPublic(privateKey)
-    }, "shouldn't produce a public key given an invalid private key")
 
-    privateKey = Buffer.from(
-      'ea54bdc52d163f88c93ab0615782cf718a2efb9e51a7989aab1b08067e9c1c',
-      'hex'
+    privateKey = hexToBytes('0xea54bdc52d163f88c93ab0615782cf718a2efb9e51a7989aab1b08067e9c1c')
+    assert.throws(
+      function () {
+        privateToPublic(privateKey)
+      },
+      undefined,
+      undefined,
+      "shouldn't produce a public key given an invalid private key",
     )
-    st.throws(function () {
-      privateToPublic(privateKey)
-    }, "shouldn't produce a public key given an invalid private key")
 
     privateKey = '0xea54bdc52d163f88c93ab0615782cf718a2efb9e51a7989aab1b08067e9c1c5f' as any
     try {
-      privateToPublic((<unknown>privateKey) as Buffer)
+      privateToPublic((<unknown>privateKey) as Uint8Array)
     } catch (err: any) {
-      st.ok(
-        err.message.includes('This method only supports Buffer'),
-        'should throw if private key is not Buffer'
+      assert.ok(
+        err.message.includes('This method only supports Uint8Array'),
+        'should throw if private key is not Uint8Array',
       )
-      st.ok(err.message.includes(privateKey), 'should throw if private key is not Buffer')
+      assert.ok(err.message.includes(privateKey), 'should throw if private key is not Uint8Array')
     }
-    st.end()
   })
 
-  t.test('privateToAddress', function (st) {
-    const address = '2f015c60e0be116b1f0cd534704db9c92118fb6a'
+  it('privateToAddress', () => {
+    const address = '0x2f015c60e0be116b1f0cd534704db9c92118fb6a'
     // Our private key
-    const privateKey = Buffer.from(
-      'ea54bdc52d163f88c93ab0615782cf718a2efb9e51a7989aab1b08067e9c1c5f',
-      'hex'
+    const privateKey = hexToBytes(
+      '0xea54bdc52d163f88c93ab0615782cf718a2efb9e51a7989aab1b08067e9c1c5f',
     )
     const r = privateToAddress(privateKey)
-    st.equal(r.toString('hex'), address, 'should produce an address given a private key')
-    st.end()
+    assert.equal(bytesToHex(r), address, 'should produce an address given a private key')
   })
 
-  t.test('generateAddress', function (st) {
+  it('generateAddress', () => {
     const addr = generateAddress(
-      Buffer.from('990ccf8a0de58091c028d6ff76bb235ee67c1c39', 'utf8'),
-      toBuffer(14)
+      utf8ToBytes('990ccf8a0de58091c028d6ff76bb235ee67c1c39'),
+      toBytes(14),
     )
-    st.equal(
-      addr.toString('hex'),
-      '936a4295d8d74e310c0c95f0a63e53737b998d12',
-      'should produce an address given a public key'
+    assert.equal(
+      bytesToHex(addr),
+      '0x936a4295d8d74e310c0c95f0a63e53737b998d12',
+      'should produce an address given a public key',
     )
-    st.end()
   })
 
-  t.test('generateAddress wt.testh hex prefix', function (st) {
-    const addr = generateAddress(
-      toBuffer('0x990ccf8a0de58091c028d6ff76bb235ee67c1c39'),
-      toBuffer(14)
+  it('generateAddress with hex prefix', () => {
+    const addr = generateAddress(toBytes('0x990ccf8a0de58091c028d6ff76bb235ee67c1c39'), toBytes(14))
+    assert.equal(
+      bytesToHex(addr),
+      '0xd658a4b8247c14868f3c512fa5cbb6e458e4a989',
+      'should produce an address given a public key',
     )
-    st.equal(
-      addr.toString('hex'),
-      'd658a4b8247c14868f3c512fa5cbb6e458e4a989',
-      'should produce an address given a public key'
-    )
-    st.end()
   })
 
-  t.test('generateAddress wt.testh nonce 0 (special case)', function (st) {
-    const addr = generateAddress(
-      toBuffer('0x990ccf8a0de58091c028d6ff76bb235ee67c1c39'),
-      toBuffer(0)
+  // cspell:disable
+  it('generateAddress wt.testh nonce 0 (special case)', () => {
+    // cspell:enable
+    const addr = generateAddress(toBytes('0x990ccf8a0de58091c028d6ff76bb235ee67c1c39'), toBytes(0))
+    assert.equal(
+      bytesToHex(addr),
+      '0xbfa69ba91385206bfdd2d8b9c1a5d6c10097a85b',
+      'should produce an address given a public key',
     )
-    st.equal(
-      addr.toString('hex'),
-      'bfa69ba91385206bfdd2d8b9c1a5d6c10097a85b',
-      'should produce an address given a public key'
-    )
-    st.end()
   })
 
-  t.test('generateAddress wt.testh non-buffer inputs', function (st) {
-    st.throws(function () {
-      generateAddress(
-        (<unknown>'0x990ccf8a0de58091c028d6ff76bb235ee67c1c39') as Buffer,
-        toBuffer(0)
-      )
-    }, 'should throw if address is not Buffer')
+  // cspell:disable
+  it('generateAddress wt.testh non-buffer inputs', () => {
+    // cspell:enable
+    assert.throws(
+      function () {
+        generateAddress(
+          (<unknown>'0x990ccf8a0de58091c028d6ff76bb235ee67c1c39') as Uint8Array,
+          toBytes(0),
+        )
+      },
+      undefined,
+      undefined,
+      'should throw if address is not Uint8Array',
+    )
 
-    st.throws(function () {
-      generateAddress(
-        toBuffer('0x990ccf8a0de58091c028d6ff76bb235ee67c1c39'),
-        (<unknown>0) as Buffer
-      )
-    }, 'should throw if nonce is not Buffer')
-    st.end()
+    assert.throws(
+      function () {
+        generateAddress(
+          toBytes('0x990ccf8a0de58091c028d6ff76bb235ee67c1c39'),
+          (<unknown>0) as Uint8Array,
+        )
+      },
+      undefined,
+      undefined,
+      'should throw if nonce is not Uint8Array',
+    )
   })
 
-  t.test('generateAddress2: EIP-1014 testdata examples', function (st) {
-    for (const testdata of eip1014Testdata) {
+  it('generateAddress2: EIP-1014 testdata examples', () => {
+    for (const testdata of eip1404ExamplesData) {
       const { address, comment, result, salt, initCode } = testdata
-      const addr = generateAddress2(toBuffer(address), toBuffer(salt), toBuffer(initCode))
-      st.equal(
-        '0x' + addr.toString('hex'),
-        result,
-        `${comment}: should generate the addresses provided`
+      const addr = generateAddress2(
+        hexToBytes(address as PrefixedHexString),
+        hexToBytes(salt as PrefixedHexString),
+        hexToBytes(initCode as PrefixedHexString),
       )
+      assert.equal(bytesToHex(addr), result, `${comment}: should generate the addresses provided`)
     }
-    st.end()
   })
 
-  t.test('generateAddress2: non-buffer inputs', function (st) {
-    const { address, salt, initCode } = eip1014Testdata[0]
+  it('generateAddress2: non-buffer inputs', () => {
+    const { address, salt, initCode } = eip1404ExamplesData[0]
 
-    st.throws(function () {
-      generateAddress2((<unknown>address) as Buffer, toBuffer(salt), toBuffer(initCode))
-    }, 'should throw if address is not Buffer')
+    assert.throws(
+      function () {
+        generateAddress2(
+          (<unknown>address) as Uint8Array,
+          hexToBytes(salt as PrefixedHexString),
+          hexToBytes(initCode as PrefixedHexString),
+        )
+      },
+      undefined,
+      undefined,
+      'should throw if address is not Uint8Array',
+    )
 
-    st.throws(function () {
-      generateAddress2(toBuffer(address), (<unknown>salt) as Buffer, toBuffer(initCode))
-    }, 'should throw if salt is not Buffer')
+    assert.throws(
+      function () {
+        generateAddress2(
+          hexToBytes(address as PrefixedHexString),
+          (<unknown>salt) as Uint8Array,
+          hexToBytes(initCode as PrefixedHexString),
+        )
+      },
+      undefined,
+      undefined,
+      'should throw if salt is not Uint8Array',
+    )
 
-    st.throws(function () {
-      generateAddress2(toBuffer(address), toBuffer(salt), (<unknown>initCode) as Buffer)
-    }, 'should throw if initCode is not Buffer')
-    st.end()
+    assert.throws(
+      function () {
+        generateAddress2(
+          hexToBytes(address as PrefixedHexString),
+          hexToBytes(salt as PrefixedHexString),
+          (<unknown>initCode) as Uint8Array,
+        )
+      },
+      undefined,
+      undefined,
+      'should throw if initCode is not Uint8Array',
+    )
   })
 
   const eip55ChecksumAddresses = [
@@ -519,7 +611,7 @@ tape('Utility Functions', function (t) {
     '0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb',
   ]
 
-  const eip1191ChecksummAddresses = {
+  const eip1191ChecksumAddresses = {
     1: [
       '0x88021160c5C792225E4E5452585947470010289d',
       '0x27b1FdB04752bBc536007a920D24ACB045561c26',
@@ -558,126 +650,526 @@ tape('Utility Functions', function (t) {
     ],
   }
 
-  t.test('toChecksumAddress()', function (st) {
-    st.test('EIP55', function (st) {
+  describe('toChecksumAddress()', () => {
+    it('EIP55', () => {
       for (let i = 0; i < eip55ChecksumAddresses.length; i++) {
         const tmp = eip55ChecksumAddresses[i]
-        st.equal(toChecksumAddress(tmp.toLowerCase()), tmp)
+        assert.equal(toChecksumAddress(tmp.toLowerCase()).toLowerCase(), tmp.toLowerCase())
       }
-      st.end()
     })
 
-    st.test('EIP1191', function (st) {
-      st.test('Should encode the example addresses correctly', function (st) {
-        for (const [chainId, addresses] of Object.entries(eip1191ChecksummAddresses)) {
+    describe('EIP1191', () => {
+      it('Should encode the example addresses correctly', () => {
+        for (const [chainId, addresses] of Object.entries(eip1191ChecksumAddresses)) {
           for (const addr of addresses) {
-            st.equal(toChecksumAddress(addr.toLowerCase(), Number(chainId)), addr)
-            st.equal(toChecksumAddress(addr.toLowerCase(), Buffer.from([chainId] as any)), addr)
-            st.equal(toChecksumAddress(addr.toLowerCase(), BigInt(chainId)), addr)
-            st.equal(
+            assert.equal(toChecksumAddress(addr.toLowerCase(), Number(chainId)), addr)
+            assert.equal(
               toChecksumAddress(
                 addr.toLowerCase(),
-                '0x' + Buffer.from([chainId] as any).toString('hex')
-              ),
-              addr
+                hexToBytes(`0x${padToEven(chainId)}`),
+              ).toLowerCase(),
+              addr.toLowerCase(),
+            )
+            assert.equal(
+              toChecksumAddress(addr.toLowerCase(), BigInt(chainId)).toLowerCase(),
+              addr.toLowerCase(),
+            )
+            assert.equal(
+              toChecksumAddress(addr.toLowerCase(), `0x${padToEven(chainId)}`).toLowerCase(),
+              addr.toLowerCase(),
             )
           }
         }
-        st.end()
       })
-      st.test('Should encode large chain ids greater than MAX_INTEGER correctly', function (st) {
+      it('Should encode large chain ids greater than MAX_INTEGER correctly', () => {
         const addr = '0x88021160C5C792225E4E5452585947470010289D'
-        const chainIDBuffer = Buffer.from('796f6c6f763378', 'hex')
-        st.equal(toChecksumAddress(addr.toLowerCase(), chainIDBuffer), addr)
-        st.equal(toChecksumAddress(addr.toLowerCase(), bufferToBigInt(chainIDBuffer)), addr)
-        st.equal(toChecksumAddress(addr.toLowerCase(), '0x' + chainIDBuffer.toString('hex')), addr)
-        const chainIDNumber = parseInt(chainIDBuffer.toString('hex'), 16)
-        st.throws(() => {
-          toChecksumAddress(addr.toLowerCase(), chainIDNumber)
-        })
-        st.end()
+        const chainIDBytes = hexToBytes('0x796f6c6f763378')
+        assert.equal(toChecksumAddress(addr.toLowerCase(), chainIDBytes), addr)
+        assert.equal(toChecksumAddress(addr.toLowerCase(), bytesToBigInt(chainIDBytes)), addr)
+        assert.equal(toChecksumAddress(addr.toLowerCase(), bytesToHex(chainIDBytes)), addr)
       })
-      st.end()
     })
 
-    st.test('input format', function (st) {
-      st.throws(function () {
-        toChecksumAddress('52908400098527886E0F7030069857D2E4169EE7'.toLowerCase())
-      }, 'Should throw when the address is not hex-prefixed')
+    it('input format', () => {
+      assert.throws(
+        function () {
+          toChecksumAddress('52908400098527886E0F7030069857D2E4169EE7'.toLowerCase())
+        },
+        undefined,
+        undefined,
+        'Should throw when the address is not hex-prefixed',
+      )
 
-      st.throws(function () {
-        toChecksumAddress('0xde709f2102306220921060314715629080e2fb77', '1234')
-      }, 'Should throw when the chainId is not hex-prefixed')
-      st.end()
+      assert.throws(
+        function () {
+          toChecksumAddress('0xde709f2102306220921060314715629080e2fb77', '1234' as any)
+        },
+        undefined,
+        undefined,
+        'Should throw when the chainId is not hex-prefixed',
+      )
     })
   })
 
-  t.test('isValidChecksumAddress()', function (st) {
-    st.test('EIP55', function (st) {
+  describe('isValidChecksumAddress()', () => {
+    it('EIP55', () => {
       for (let i = 0; i < eip55ChecksumAddresses.length; i++) {
-        st.ok(isValidChecksumAddress(eip55ChecksumAddresses[i]))
+        assert.ok(isValidChecksumAddress(eip55ChecksumAddresses[i]))
       }
-      st.notOk(isValidChecksumAddress('0x2f015c60e0be116b1f0cd534704db9c92118fb6a'))
-      st.end()
+      assert.notOk(isValidChecksumAddress('0x2f015c60e0be116b1f0cd534704db9c92118fb6a'))
     })
 
-    st.test('EIP1191', function (st) {
-      st.test('Should return true for the example addresses', function (st) {
-        for (const [chainId, addresses] of Object.entries(eip1191ChecksummAddresses)) {
+    describe('EIP1191', () => {
+      it('Should return true for the example addresses', () => {
+        for (const [chainId, addresses] of Object.entries(eip1191ChecksumAddresses)) {
           for (const addr of addresses) {
-            st.ok(isValidChecksumAddress(addr, Number(chainId)))
-            st.ok(isValidChecksumAddress(addr, Buffer.from([chainId] as any)))
-            st.ok(isValidChecksumAddress(addr, BigInt(chainId)))
-            st.equal(
-              isValidChecksumAddress(addr, '0x' + Buffer.from([chainId] as any).toString('hex')),
-              true
+            assert.ok(isValidChecksumAddress(addr, Number(chainId)))
+            assert.ok(isValidChecksumAddress(addr, intToBytes(parseInt(chainId))))
+            assert.ok(isValidChecksumAddress(addr, BigInt(chainId)))
+            assert.ok(
+              isValidChecksumAddress(addr, `0x${padToEven(intToHex(parseInt(chainId)).slice(2))}`),
             )
           }
         }
-        st.end()
       })
 
-      st.test('Should return false for invalid cases', function (st) {
+      it('Should return false for invalid cases', () => {
         // If we set the chain id, an EIP55 encoded address should be invalid
         for (let i = 0; i < eip55ChecksumAddresses.length; i++) {
-          st.notOk(isValidChecksumAddress(eip55ChecksumAddresses[i], 1))
+          assert.notOk(isValidChecksumAddress(eip55ChecksumAddresses[i], 1))
         }
 
-        st.notOk(isValidChecksumAddress('0x2f015c60e0be116b1f0cd534704db9c92118fb6a', 1))
-        st.end()
+        assert.notOk(isValidChecksumAddress('0x2f015c60e0be116b1f0cd534704db9c92118fb6a', 1))
       })
 
-      st.test('Should return false if the wrong chain id is used', function (st) {
-        for (const [chainId, addresses] of Object.entries(eip1191ChecksummAddresses)) {
+      it('Should return false if the wrong chain id is used', () => {
+        for (const [chainId, addresses] of Object.entries(eip1191ChecksumAddresses)) {
           for (const addr of addresses) {
-            st.notOk(isValidChecksumAddress(addr, Number(chainId) + 1))
+            assert.notOk(isValidChecksumAddress(addr, Number(chainId) + 1))
           }
         }
-        st.end()
       })
 
-      st.test('Should return false if input is not hex-prefixed', function (st) {
-        st.notOk(isValidChecksumAddress('2f015c60e0be116b1f0cd534704db9c92118fb6a'))
-        st.end()
+      it('Should return false if input is not hex-prefixed', () => {
+        assert.notOk(isValidChecksumAddress('2f015c60e0be116b1f0cd534704db9c92118fb6a'))
       })
-
-      st.end()
     })
   })
 
-  t.test('isValidAddress()', function (st) {
-    st.test('should return true', function (st) {
-      st.ok(isValidAddress('0x2f015c60e0be116b1f0cd534704db9c92118fb6a'))
-      st.ok(isValidAddress('0x52908400098527886E0F7030069857D2E4169EE7'))
-      st.end()
+  describe('isValidAddress()', () => {
+    it('should return true', () => {
+      assert.ok(isValidAddress('0x2f015c60e0be116b1f0cd534704db9c92118fb6a'))
+      assert.ok(isValidAddress('0x52908400098527886E0F7030069857D2E4169EE7'))
     })
-    st.test('should return false', function (st) {
-      st.notOk(isValidAddress('0x2f015c60e0be116b1f0cd534704db9c92118fb6'))
-      st.notOk(isValidAddress('0x2f015c60e0be116b1f0cd534704db9c92118fb6aa'))
-      st.notOk(isValidAddress('2f015c60e0be116b1f0cd534704db9c92118fb6a'))
-      st.notOk(isValidAddress('x2f015c60e0be116b1f0cd534704db9c92118fb6a'))
-      st.notOk(isValidAddress('0X52908400098527886E0F7030069857D2E4169EE7'))
-      st.end()
+    it('should return false', () => {
+      assert.notOk(isValidAddress('0x2f015c60e0be116b1f0cd534704db9c92118fb6'))
+      assert.notOk(isValidAddress('0x2f015c60e0be116b1f0cd534704db9c92118fb6aa'))
+      assert.notOk(isValidAddress('2f015c60e0be116b1f0cd534704db9c92118fb6a'))
+      assert.notOk(isValidAddress('x2f015c60e0be116b1f0cd534704db9c92118fb6a'))
+      assert.notOk(isValidAddress('0X52908400098527886E0F7030069857D2E4169EE7'))
     })
+  })
+
+  it('should convert account body from slim', () => {
+    const body: AccountBodyBytes = [
+      new Uint8Array(8),
+      new Uint8Array(8),
+      new Uint8Array(0),
+      new Uint8Array(0),
+    ]
+    const result = accountBodyFromSlim(body)
+    assert.equal(result.length, 4)
+    assert.equal(
+      JSON.stringify(result[2]),
+      JSON.stringify(KECCAK256_RLP),
+      'Empty storageRoot should be changed to hash of RLP of null',
+    )
+    assert.equal(
+      JSON.stringify(result[3]),
+      JSON.stringify(KECCAK256_NULL),
+      'Empty codeRoot should be changed to hash of RLP of null',
+    )
+  })
+
+  it('should convert account body to slim', () => {
+    const body: AccountBodyBytes = [
+      new Uint8Array(8),
+      new Uint8Array(8),
+      KECCAK256_RLP,
+      KECCAK256_NULL,
+    ]
+    const result = accountBodyToSlim(body)
+    assert.equal(result.length, 4)
+    assert.equal(JSON.stringify(result[2]), JSON.stringify(new Uint8Array(0)))
+    assert.equal(JSON.stringify(result[3]), JSON.stringify(new Uint8Array(0)))
+  })
+
+  it('should convert account body to RLP', () => {
+    const body: AccountBodyBytes = [
+      new Uint8Array(8),
+      new Uint8Array(8),
+      KECCAK256_RLP,
+      KECCAK256_NULL,
+    ]
+    const result = accountBodyToRLP(body)
+    assert.equal(JSON.stringify(result), JSON.stringify(RLP.encode(body)))
+  })
+})
+
+describe('createPartialAccount', () => {
+  it('should throw an error when all fields are null', () => {
+    assert.throws(
+      () =>
+        createPartialAccount({
+          nonce: null,
+          balance: null,
+          storageRoot: null,
+          codeHash: null,
+          codeSize: null,
+          version: null,
+        }),
+      'All partial fields null',
+    )
+  })
+
+  it('should return Account with correct values when fields are provided', () => {
+    const accountData = {
+      nonce: 1n,
+      balance: Units.ether(1),
+      storageRoot: KECCAK256_RLP,
+      codeHash: KECCAK256_RLP,
+      codeSize: 10,
+      version: 1,
+    }
+    const account = createPartialAccount(accountData)
+
+    assert.deepEqual(
+      account,
+      new Account(
+        accountData.nonce,
+        accountData.balance,
+        accountData.storageRoot,
+        accountData.codeHash,
+        accountData.codeSize,
+        accountData.version,
+      ),
+    )
+  })
+
+  it('should return Account with null and undefined value fields as given', () => {
+    const accountData = {
+      nonce: undefined,
+      balance: Units.ether(1),
+      storageRoot: undefined,
+      codeHash: null,
+      codeSize: 10,
+      version: undefined,
+    }
+    const account = createPartialAccount(accountData)
+
+    assert.deepEqual(
+      account,
+      new Account(
+        accountData.nonce,
+        accountData.balance,
+        accountData.storageRoot,
+        accountData.codeHash,
+        accountData.codeSize,
+        accountData.version,
+      ),
+    )
+  })
+})
+
+describe('createPartialAccountFromRLP', () => {
+  it('should throw an error for invalid serialized account input (non-array)', () => {
+    const invalidSerialized = toBytes(1n)
+    assert.throws(
+      () => createPartialAccountFromRLP(invalidSerialized),
+      /Invalid serialized account input/,
+    )
+  })
+
+  const testCases = [
+    {
+      description: 'should handle a mix of null and non-null values correctly',
+      data: [
+        [toBytes(1), toBytes(1)], // Nonce: 1
+        [toBytes(0)], // Balance: null
+        [toBytes(1), KECCAK256_RLP], // StorageRoot: KECCAK256_RLP
+        [toBytes(0)], // CodeHash: null
+        [toBytes(1), toBytes(10)], // CodeSize: 10
+        [toBytes(0)], // Version: null
+      ],
+      shouldThrow: false,
+      expected: new Account(BigInt(1), null, KECCAK256_RLP, null, 10, null),
+      errorRegex: null,
+    },
+    {
+      description: 'should throw when all fields are null',
+      data: [
+        [toBytes(0)], // Nonce: null
+        [toBytes(0)], // Balance: null
+        [toBytes(0)], // StorageRoot: null
+        [toBytes(0)], // CodeHash: null
+        [toBytes(0)], // CodeSize: null
+        [toBytes(0)], // Version: null
+      ],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /All partial fields null/,
+    },
+    {
+      description: 'should handle all non-null fields correctly',
+      data: [
+        [toBytes(1), toBytes(2)], // Nonce: 2
+        [toBytes(1), toBytes(1000)], // Balance: 1000
+        [toBytes(1), KECCAK256_RLP], // StorageRoot: KECCAK256_RLP
+        [toBytes(1), KECCAK256_RLP], // CodeHash: KECCAK256_RLP
+        [toBytes(1), toBytes(50)], // CodeSize: 50
+        [toBytes(1), toBytes(1)], // Version: 1
+      ],
+      shouldThrow: false,
+      expected: new Account(BigInt(2), BigInt(1000), KECCAK256_RLP, KECCAK256_RLP, 50, 1),
+      errorRegex: null,
+    },
+    {
+      description:
+        'should return partial account with non-null fields when isNotNullIndicator is 1',
+      data: [
+        [toBytes(1), toBytes(2)], // Nonce: 2
+        [toBytes(1), toBytes(1000)], // Balance: 1000
+        [toBytes(1), KECCAK256_RLP], // StorageRoot: KECCAK256_RLP
+        [toBytes(1), KECCAK256_RLP], // CodeHash: KECCAK256_RLP
+        [toBytes(1), toBytes(50)], // CodeSize: 50
+        [toBytes(1), toBytes(1)], // Version: 1
+      ],
+      shouldThrow: false,
+      expected: new Account(BigInt(2), BigInt(1000), KECCAK256_RLP, KECCAK256_RLP, 50, 1),
+      errorRegex: null,
+    },
+    {
+      description: 'should return a mix of null and non-null fields based on isNotNullIndicator',
+      data: [
+        [toBytes(1), toBytes(2)], // Nonce: 2
+        [toBytes(0)], // Balance: null
+        [toBytes(1), KECCAK256_RLP], // StorageRoot: KECCAK256_RLP
+        [toBytes(0)], // CodeHash: null
+        [toBytes(1), toBytes(50)], // CodeSize: 50
+        [toBytes(0)], // Version: null
+      ],
+      shouldThrow: false,
+      expected: new Account(BigInt(2), null, KECCAK256_RLP, null, 50, null),
+      errorRegex: null,
+    },
+    {
+      description:
+        'should handle cases where some fields are non-null and others are null correctly',
+      data: [
+        [toBytes(1), toBytes(2)], // Nonce: 2
+        [toBytes(0)], // Balance: null
+        [toBytes(1), KECCAK256_RLP], // StorageRoot: KECCAK256_RLP
+        [toBytes(1), KECCAK256_RLP], // CodeHash: KECCAK256_RLP
+        [toBytes(0)], // CodeSize: null
+        [toBytes(0)], // Version: null
+      ],
+      shouldThrow: false,
+      expected: new Account(BigInt(2), null, KECCAK256_RLP, KECCAK256_RLP, null, null),
+      errorRegex: null,
+    },
+    {
+      description: 'should handle fields with empty arrays (isNullIndicator=0) correctly',
+      data: [
+        [], // nonce -> empty array => null
+        [toBytes(1), toBytes(1000)], // balance: 1000
+        [], // storageRoot -> null
+        [], // codeHash -> null
+        [], // codeSize -> null
+        [], // version -> null
+      ],
+      shouldThrow: false,
+      expected: new Account(null, BigInt(1000), null, null, null, null),
+      errorRegex: null,
+    },
+    {
+      description: 'should throw: invalid partial nonce encoding',
+      data: [KECCAK256_RLP, [], [], [], [], []],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid partial nonce encoding/,
+    },
+    {
+      description: 'should throw: invalid partial balance encoding',
+      data: [[], KECCAK256_RLP, [], [], [], []],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid partial balance encoding/,
+    },
+    {
+      description: 'should throw: invalid partial storageRoot encoding',
+      data: [[], [], KECCAK256_RLP, [], [], []],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid partial storageRoot encoding/,
+    },
+    {
+      description: 'should throw: invalid partial codeHash encoding',
+      data: [[], [], [], KECCAK256_RLP, [], []],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid partial codeHash encoding/,
+    },
+    {
+      description: 'should throw: invalid partial codeSize encoding',
+      data: [[], [], [], [], KECCAK256_RLP, []],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid partial codeSize encoding/,
+    },
+    {
+      description: 'should throw: invalid partial version encoding',
+      data: [[], [], [], [], [], KECCAK256_RLP],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid partial version encoding/,
+    },
+    {
+      description: 'should throw: invalid isNullIndicator=2 for nonce',
+      data: [[toBytes(2)], [], [], [], [], []],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid isNullIndicator=2 for nonce/,
+    },
+    {
+      description: 'should throw: invalid isNullIndicator=2 for balance',
+      data: [[], [toBytes(2)], [], [], [], []],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid isNullIndicator=2 for balance/,
+    },
+    {
+      description: 'should throw: invalid isNullIndicator=2 for storageRoot',
+      data: [[], [], [toBytes(2)], [], [], []],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid isNullIndicator=2 for storageRoot/,
+    },
+    {
+      description: 'should throw: invalid isNullIndicator=2 for codeHash',
+      data: [[], [], [], [toBytes(2)], [], []],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid isNullIndicator=2 for codeHash/,
+    },
+    {
+      description: 'should throw: invalid isNullIndicator=2 for codeSize',
+      data: [[], [], [], [], [toBytes(2)], []],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid isNullIndicator=2 for codeSize/,
+    },
+    {
+      description: 'should throw: invalid isNullIndicator=2 for version',
+      data: [[], [], [], [], [], [toBytes(2)]],
+      shouldThrow: true,
+      expected: null,
+      errorRegex: /Invalid isNullIndicator=2 for version/,
+    },
+  ]
+
+  for (const { description, data, shouldThrow, expected, errorRegex } of testCases) {
+    it(description, () => {
+      const serialized = RLP.encode(data)
+      if (shouldThrow) {
+        assert.throws(() => createPartialAccountFromRLP(serialized), errorRegex as RegExp)
+      } else {
+        const account = createPartialAccountFromRLP(serialized)
+        assert.deepEqual(account, expected)
+      }
+    })
+  }
+})
+
+describe('serializeWithPartialInfo', () => {
+  const testCases = [
+    {
+      description: 'should serialize all fields as null (isNotNullIndicator=0)',
+      account: new Account(null, null, null, null, null, null),
+      expectedDecoded: [
+        [new Uint8Array()], // Nonce: null
+        [new Uint8Array()], // Balance: null
+        [new Uint8Array()], // StorageRoot: null
+        [new Uint8Array()], // CodeHash: null
+        [new Uint8Array()], // CodeSize: null
+        [new Uint8Array()], // Version: null
+      ],
+    },
+    {
+      description: 'should serialize all fields as non-null (isNotNullIndicator=1)',
+      account: new Account(BigInt(2), Units.ether(1), KECCAK256_RLP, KECCAK256_RLP, 50, 1),
+      expectedDecoded: [
+        [toBytes(1), bigIntToUnpaddedBytes(BigInt(2))], // Nonce: 2
+        [toBytes(1), bigIntToUnpaddedBytes(Units.ether(1))], // Balance: 1000
+        [toBytes(1), KECCAK256_RLP], // StorageRoot: KECCAK256_RLP
+        [toBytes(1), KECCAK256_RLP], // CodeHash: KECCAK256_RLP
+        [toBytes(1), intToUnpaddedBytes(50)], // CodeSize: 50
+        [toBytes(1), intToUnpaddedBytes(1)], // Version: 1
+      ],
+    },
+    {
+      description: 'should serialize mixed null and non-null fields',
+      account: new Account(BigInt(2), null, KECCAK256_RLP, null, 50, null),
+      expectedDecoded: [
+        [toBytes(1), bigIntToUnpaddedBytes(BigInt(2))], // Nonce: 2
+        [new Uint8Array()], // Balance: null
+        [toBytes(1), KECCAK256_RLP], // StorageRoot: KECCAK256_RLP
+        [new Uint8Array()], // CodeHash: null
+        [toBytes(1), intToUnpaddedBytes(50)], // CodeSize: 50
+        [new Uint8Array()], // Version: null
+      ],
+    },
+    {
+      description:
+        'should correctly handle serialization of null hash for storageRoot and codeHash',
+      account: new Account(BigInt(2), Units.ether(1), KECCAK256_RLP, KECCAK256_RLP, 50, 1),
+      expectedDecoded: [
+        [toBytes(1), bigIntToUnpaddedBytes(BigInt(2))], // Nonce: 2
+        [toBytes(1), bigIntToUnpaddedBytes(Units.ether(1))], // Balance: 1000
+        [toBytes(1), KECCAK256_RLP], // StorageRoot: KECCAK256_RLP
+        [toBytes(1), KECCAK256_RLP], // CodeHash: KECCAK256_RLP
+        [toBytes(1), intToUnpaddedBytes(50)], // CodeSize: 50
+        [toBytes(1), intToUnpaddedBytes(1)], // Version: 1
+      ],
+    },
+    {
+      description: 'should correctly serialize when only some fields are provided',
+      account: new Account(BigInt(123), null, KECCAK256_RLP, null, null, 42),
+      expectedDecoded: [
+        [toBytes(1), bigIntToUnpaddedBytes(BigInt(123))], // Nonce: 123
+        [new Uint8Array()], // Balance: null
+        [toBytes(1), KECCAK256_RLP], // StorageRoot: KECCAK256_RLP
+        [new Uint8Array()], // CodeHash: null
+        [new Uint8Array()], // CodeSize: null
+        [toBytes(1), intToUnpaddedBytes(42)], // Version: 42
+      ],
+    },
+  ]
+
+  for (const { description, account, expectedDecoded } of testCases) {
+    it(description, () => {
+      const serialized = account.serializeWithPartialInfo()
+      const decoded = RLP.decode(serialized)
+      assert.deepEqual(decoded, expectedDecoded)
+    })
+  }
+
+  it('should serialize and then deserialize back to the original account object', () => {
+    const account = new Account(BigInt(2), Units.ether(1), KECCAK256_RLP, KECCAK256_RLP, 50, 1)
+    const serialized = account.serializeWithPartialInfo()
+
+    // Now deserialize the serialized data back into a partial account
+    const deserializedAccount = createPartialAccountFromRLP(serialized)
+
+    assert.deepEqual(deserializedAccount, account)
   })
 })

@@ -8,11 +8,23 @@ An object with the block's data represented as strings.
 
 ### Properties
 
+- [executionWitness](JsonBlock.md#executionwitness)
 - [header](JsonBlock.md#header)
 - [transactions](JsonBlock.md#transactions)
 - [uncleHeaders](JsonBlock.md#uncleheaders)
+- [withdrawals](JsonBlock.md#withdrawals)
 
 ## Properties
+
+### executionWitness
+
+• `Optional` **executionWitness**: ``null`` \| [`VerkleExecutionWitness`](VerkleExecutionWitness.md)
+
+#### Defined in
+
+[types.ts:192](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L192)
+
+___
 
 ### header
 
@@ -22,7 +34,7 @@ Header data for the block
 
 #### Defined in
 
-[types.ts:127](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L127)
+[types.ts:188](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L188)
 
 ___
 
@@ -32,7 +44,7 @@ ___
 
 #### Defined in
 
-[types.ts:128](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L128)
+[types.ts:189](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L189)
 
 ___
 
@@ -42,4 +54,14 @@ ___
 
 #### Defined in
 
-[types.ts:129](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L129)
+[types.ts:190](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L190)
+
+___
+
+### withdrawals
+
+• `Optional` **withdrawals**: `JsonRpcWithdrawal`[]
+
+#### Defined in
+
+[types.ts:191](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/block/src/types.ts#L191)

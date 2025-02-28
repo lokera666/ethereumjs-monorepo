@@ -1,20 +1,28 @@
-import { join } from 'path'
+import { createBlock } from '@ethereumjs/block'
+import { Common, Hardfork, Mainnet } from '@ethereumjs/common'
+import { createLegacyTx } from '@ethereumjs/tx'
+import { bytesToHex, createAddressFromPrivateKey, hexToBytes } from '@ethereumjs/util'
+import { createVM, runTx } from '@ethereumjs/vm'
+import { AbiCoder, Interface } from 'ethers'
 import { readFileSync } from 'fs'
-import { defaultAbiCoder as AbiCoder, Interface } from '@ethersproject/abi'
-import { Address } from '@ethereumjs/util'
-import { Chain, Common, Hardfork } from '@ethereumjs/common'
-import { Transaction } from '@ethereumjs/tx'
-import { VM } from '..'
-import { buildTransaction, encodeDeployment, encodeFunction } from './helpers/tx-builder'
-import { getAccountNonce, insertAccount } from './helpers/account-utils'
-import { Block } from '@ethereumjs/block'
-const solc = require('solc')
+import path from 'path'
+import solc from 'solc'
+import { fileURLToPath } from 'url'
+
+import { getAccountNonce, insertAccount } from './helpers/account-utils.js'
+import { buildTransaction, encodeDeployment, encodeFunction } from './helpers/tx-builder.js'
+
+import type { Address } from '@ethereumjs/util'
+import type { VM } from '@ethereumjs/vm'
 
 const INITIAL_GREETING = 'Hello, World!'
-const SECOND_GREETING = 'Hola, Mundo!'
+const SECOND_GREETING = 'Hola, Mundo!' // cspell:disable-line
 
-const common = new Common({ chain: Chain.Rinkeby, hardfork: Hardfork.Istanbul })
-const block = Block.fromBlockData({ header: { extraData: Buffer.alloc(97) } }, { common })
+const common = new Common({ chain: Mainnet, hardfork: Hardfork.Istanbul })
+const block = createBlock({ header: { extraData: new Uint8Array(97) } }, { common })
+
+const __filename = fileURLToPath(import.meta.url) // get the resolved path to the file
+const __dirname = path.dirname(__filename) // get the name of the directory
 
 /**
  * This function creates the input for the Solidity compiler.
@@ -30,7 +38,7 @@ function getSolcInput() {
     language: 'Solidity',
     sources: {
       'helpers/Greeter.sol': {
-        content: readFileSync(join(__dirname, 'helpers', 'Greeter.sol'), 'utf8'),
+        content: readFileSync(path.join(__dirname, 'helpers', 'Greeter.sol'), 'utf8'),
       },
       // If more contracts were to be compiled, they should have their own entries here
     },
@@ -61,7 +69,7 @@ function compileContracts() {
 
   let compilationFailed = false
 
-  if (output.errors) {
+  if (output.errors !== undefined) {
     for (const error of output.errors) {
       if (error.severity === 'error') {
         console.error(error.formattedMessage)
@@ -85,13 +93,14 @@ function getGreeterDeploymentBytecode(solcOutput: any): any {
 
 async function deployContract(
   vm: VM,
-  senderPrivateKey: Buffer,
-  deploymentBytecode: Buffer,
-  greeting: string
+  senderPrivateKey: Uint8Array,
+  deploymentBytecode: string,
+  greeting: string,
 ): Promise<Address> {
   // Contracts are deployed by sending their deployment bytecode to the address 0
   // The contract params should be abi-encoded and appended to the deployment bytecode.
-  const data = encodeDeployment(deploymentBytecode.toString('hex'), {
+
+  const data = encodeDeployment(deploymentBytecode, {
     types: ['string'],
     values: [greeting],
   })
@@ -100,9 +109,9 @@ async function deployContract(
     nonce: await getAccountNonce(vm, senderPrivateKey),
   }
 
-  const tx = Transaction.fromTxData(buildTransaction(txData), { common }).sign(senderPrivateKey)
+  const tx = createLegacyTx(buildTransaction(txData as any), { common }).sign(senderPrivateKey)
 
-  const deploymentResult = await vm.runTx({ tx, block })
+  const deploymentResult = await runTx(vm, { tx, block })
 
   if (deploymentResult.execResult.exceptionError) {
     throw deploymentResult.execResult.exceptionError
@@ -113,9 +122,9 @@ async function deployContract(
 
 async function setGreeting(
   vm: VM,
-  senderPrivateKey: Buffer,
+  senderPrivateKey: Uint8Array,
   contractAddress: Address,
-  greeting: string
+  greeting: string,
 ) {
   const data = encodeFunction('setGreeting', {
     types: ['string'],
@@ -125,12 +134,12 @@ async function setGreeting(
   const txData = {
     to: contractAddress,
     data,
-    nonce: await getAccountNonce(vm, senderPrivateKey),
+    nonce: await getAccountNonce(vm as any, senderPrivateKey),
   }
 
-  const tx = Transaction.fromTxData(buildTransaction(txData), { common }).sign(senderPrivateKey)
+  const tx = createLegacyTx(buildTransaction(txData as any), { common }).sign(senderPrivateKey)
 
-  const setGreetingResult = await vm.runTx({ tx, block })
+  const setGreetingResult = await runTx(vm, { tx, block })
 
   if (setGreetingResult.execResult.exceptionError) {
     throw setGreetingResult.execResult.exceptionError
@@ -138,13 +147,13 @@ async function setGreeting(
 }
 
 async function getGreeting(vm: VM, contractAddress: Address, caller: Address) {
-  const sigHash = new Interface(['function greet()']).getSighash('greet')
+  const sigHash = new Interface(['function greet()']).getFunction('greet')!.selector
 
   const greetResult = await vm.evm.runCall({
     to: contractAddress,
-    caller: caller,
+    caller,
     origin: caller, // The tx.origin is also the caller here
-    data: Buffer.from(sigHash.slice(2), 'hex'),
+    data: hexToBytes(sigHash),
     block,
   })
 
@@ -152,19 +161,16 @@ async function getGreeting(vm: VM, contractAddress: Address, caller: Address) {
     throw greetResult.execResult.exceptionError
   }
 
-  const results = AbiCoder.decode(['string'], greetResult.execResult.returnValue)
+  const results = new AbiCoder().decode(['string'], greetResult.execResult.returnValue)
 
   return results[0]
 }
 
 async function main() {
-  const accountPk = Buffer.from(
-    'e331b6d69882b4cb4ea581d88e0b604039a3de5967688d3dcffdd2270c0fd109',
-    'hex'
-  )
+  const accountPk = hexToBytes('0xe331b6d69882b4cb4ea581d88e0b604039a3de5967688d3dcffdd2270c0fd109')
 
-  const vm = await VM.create({ common })
-  const accountAddress = Address.fromPrivateKey(accountPk)
+  const vm = await createVM({ common })
+  const accountAddress = createAddressFromPrivateKey(accountPk)
 
   console.log('Account: ', accountAddress.toString())
   await insertAccount(vm, accountAddress)
@@ -192,7 +198,7 @@ async function main() {
 
   if (greeting !== INITIAL_GREETING)
     throw new Error(
-      `initial greeting not equal, received ${greeting}, expected ${INITIAL_GREETING}`
+      `initial greeting not equal, received ${greeting}, expected ${INITIAL_GREETING}`,
     )
 
   console.log('Changing greeting...')
@@ -213,18 +219,13 @@ async function main() {
   const createdAccount = await vm.stateManager.getAccount(contractAddress)
 
   console.log('-------results-------')
-  console.log('nonce: ' + createdAccount.nonce.toString())
-  console.log('balance in wei: ', createdAccount.balance.toString())
-  console.log('storageRoot: 0x' + createdAccount.storageRoot.toString('hex'))
-  console.log('codeHash: 0x' + createdAccount.codeHash.toString('hex'))
+  console.log('nonce: ' + createdAccount!.nonce.toString())
+  console.log('balance in wei: ', createdAccount!.balance.toString())
+  console.log('storageRoot: ' + bytesToHex(createdAccount!.storageRoot))
+  console.log('codeHash: ' + bytesToHex(createdAccount!.codeHash))
   console.log('---------------------')
 
   console.log('Everything ran correctly!')
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error(err)
-    process.exit(1)
-  })
+void main()

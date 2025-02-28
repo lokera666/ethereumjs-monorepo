@@ -1,23 +1,33 @@
-import { toBuffer } from '@ethereumjs/util'
-import { sha256 } from 'ethereum-cryptography/sha256'
+import { bytesToHex } from '@ethereumjs/util'
+import { sha256 } from 'ethereum-cryptography/sha256.js'
 
-import { OOGResult } from '../evm'
+import { OOGResult } from '../evm.js'
 
-import type { ExecResult } from '../evm'
-import type { PrecompileInput } from './types'
+import { gasLimitCheck } from './util.js'
+
+import { getPrecompileName } from './index.js'
+
+import type { ExecResult } from '../types.js'
+import type { PrecompileInput } from './types.js'
 
 export function precompile02(opts: PrecompileInput): ExecResult {
+  const pName = getPrecompileName('02')
   const data = opts.data
+  const sha256Function = opts.common.customCrypto.sha256 ?? sha256
+  let gasUsed = opts.common.param('sha256Gas')
+  gasUsed += opts.common.param('sha256WordGas') * BigInt(Math.ceil(data.length / 32))
 
-  let gasUsed = opts._common.param('gasPrices', 'sha256')
-  gasUsed += opts._common.param('gasPrices', 'sha256Word') * BigInt(Math.ceil(data.length / 32))
-
-  if (opts.gasLimit < gasUsed) {
+  if (!gasLimitCheck(opts, gasUsed, pName)) {
     return OOGResult(opts.gasLimit)
+  }
+
+  const hash = sha256Function(data)
+  if (opts._debug !== undefined) {
+    opts._debug(`${pName} return hash=${bytesToHex(hash)}`)
   }
 
   return {
     executionGasUsed: gasUsed,
-    returnValue: toBuffer(sha256(data)),
+    returnValue: hash,
   }
 }

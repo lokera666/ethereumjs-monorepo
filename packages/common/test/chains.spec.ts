@@ -1,164 +1,165 @@
-import * as tape from 'tape'
+import { assert, describe, it } from 'vitest'
 
-import { Chain, Common, ConsensusAlgorithm, ConsensusType, Hardfork } from '../src'
+import {
+  Common,
+  ConsensusAlgorithm,
+  ConsensusType,
+  Hardfork,
+  Mainnet,
+  getPresetChainConfig,
+} from '../src/index.js'
 
-tape('[Common/Chains]: Initialization / Chain params', function (t: tape.Test) {
-  t.test('Should initialize with chain provided', function (st: tape.Test) {
-    let c = new Common({ chain: 'mainnet' })
-    st.equal(c.chainName(), 'mainnet', 'should initialize with chain name')
-    st.equal(c.chainId(), BigInt(1), 'should return correct chain Id')
-    st.equal(c.networkId(), BigInt(1), 'should return correct network Id')
-    st.equal(c.hardfork(), Hardfork.Merge, 'should set hardfork to current default hardfork')
-    st.equal(
+import { Goerli } from './data/goerliCommon.js'
+
+import type { ChainConfig } from '../src/index.js'
+
+describe('[Common/Chains]: Initialization / Chain params', () => {
+  it('Should initialize with chain provided', () => {
+    const c = new Common({ chain: Mainnet })
+    assert.equal(c.chainName(), 'mainnet', 'should initialize with chain name')
+    assert.equal(c.chainId(), BigInt(1), 'should return correct chain Id')
+    assert.equal(c.hardfork(), Hardfork.Cancun, 'should set hardfork to current default hardfork')
+    assert.equal(
       c.hardfork(),
       c.DEFAULT_HARDFORK,
-      'should set hardfork to hardfork set as DEFAULT_HARDFORK'
+      'should set hardfork to hardfork set as DEFAULT_HARDFORK',
     )
-
-    c = new Common({ chain: 1 })
-    st.equal(c.chainName(), 'mainnet', 'should initialize with chain Id')
-
-    st.end()
   })
 
-  t.test('Should initialize with chain provided by Chain enum', function (st: tape.Test) {
-    const c = new Common({ chain: Chain.Mainnet })
-    st.equal(c.chainName(), 'mainnet', 'should initialize with chain name')
-    st.equal(c.chainId(), BigInt(1), 'should return correct chain Id')
-    st.equal(c.networkId(), BigInt(1), 'should return correct network Id')
-    st.equal(c.hardfork(), Hardfork.Merge, 'should set hardfork to current default hardfork')
-    st.equal(
-      c.hardfork(),
-      c.DEFAULT_HARDFORK,
-      'should set hardfork to hardfork set as DEFAULT_HARDFORK'
+  it('Deep copied common object should have parameters that are independent of the original copy', async () => {
+    let chainConfig: ChainConfig
+    let c: Common
+    const setCommon = async () => {
+      chainConfig = JSON.parse(JSON.stringify(Mainnet))
+      c = new Common({ chain: chainConfig })
+      assert.equal(c.chainName(), 'mainnet', 'should initialize with chain name')
+      assert.equal(c.chainId(), BigInt(1), 'should return correct chain Id')
+    }
+
+    const resetCommon = async () => {
+      // modify chain config
+      const cCopy = c.copy()
+      chainConfig.chainId = 2
+      chainConfig.name = 'testnet'
+      assert.equal(cCopy.chainName(), 'mainnet', 'should return original chain name')
+      assert.equal(cCopy.chainId(), BigInt(1), 'should return original chain Id')
+    }
+
+    await setCommon()
+    await resetCommon()
+  })
+
+  it('Should initialize with chain provided by chain name or network Id', () => {
+    let chain = getPresetChainConfig('mainnet')
+    let c = new Common({ chain })
+    assert.equal(c.chainName(), 'mainnet')
+    chain = getPresetChainConfig(123)
+    c = new Common({ chain })
+    assert.equal(c.chainName(), 'mainnet')
+  })
+
+  it('Should initialize with chain and hardfork provided', () => {
+    const c = new Common({ chain: Mainnet, hardfork: 'byzantium' })
+    assert.equal(c.hardfork(), 'byzantium', 'should return correct hardfork name')
+  })
+
+  it('Should initialize with chain and hardfork provided by Chain and Hardfork enums', () => {
+    const c = new Common({ chain: Mainnet, hardfork: Hardfork.Byzantium })
+    assert.equal(c.hardfork(), 'byzantium', 'should return correct hardfork name')
+  })
+
+  it('Should handle initialization errors', () => {
+    const f = function () {
+      new Common({ chain: Mainnet, hardfork: 'hardforkNotExisting' })
+    }
+    const msg = 'should throw an exception on non-existing hardfork'
+    assert.throws(f, /not supported$/, undefined, msg) // eslint-disable-line no-new
+  })
+
+  it('Should provide correct access to chain parameters', () => {
+    let c = new Common({ chain: Mainnet, hardfork: 'tangerineWhistle' })
+    assert.equal(c.hardforks()[3]['block'], 2463000, 'should return correct hardfork data')
+    assert.equal(typeof c.bootstrapNodes()[0].port, 'number', 'should return a port as number')
+    assert.equal(
+      c.consensusType(),
+      ConsensusType.ProofOfWork,
+      'should return correct consensus type',
     )
-
-    st.end()
-  })
-
-  t.test('Should initialize with chain and hardfork provided', function (st: tape.Test) {
-    const c = new Common({ chain: 'mainnet', hardfork: 'byzantium' })
-    st.equal(c.hardfork(), 'byzantium', 'should return correct hardfork name')
-
-    st.end()
-  })
-
-  t.test(
-    'Should initialize with chain and hardfork provided by Chain and Hardfork enums',
-    function (st: tape.Test) {
-      const c = new Common({ chain: Chain.Mainnet, hardfork: Hardfork.Byzantium })
-      st.equal(c.hardfork(), 'byzantium', 'should return correct hardfork name')
-
-      st.end()
-    }
-  )
-
-  t.test('Should handle initialization errors', function (st: tape.Test) {
-    let f = function () {
-      new Common({ chain: 'chainnotexisting' })
-    }
-    let msg = 'should throw an exception on non-existing chain'
-    st.throws(f, /not supported$/, msg) // eslint-disable-line no-new
-
-    f = function () {
-      new Common({ chain: 'mainnet', hardfork: 'hardforknotexisting' })
-    }
-    msg = 'should throw an exception on non-existing hardfork'
-    st.throws(f, /not supported$/, msg) // eslint-disable-line no-new
-
-    st.end()
-  })
-
-  t.test('Should provide correct access to chain parameters', function (st: tape.Test) {
-    let c = new Common({ chain: 'mainnet', hardfork: 'chainstart' })
-    st.equal(c.hardforks()[3]['block'], 2463000, 'should return correct hardfork data')
-    st.equal(typeof c.bootstrapNodes()[0].port, 'number', 'should return a port as number')
-    st.equal(c.consensusType(), ConsensusType.ProofOfWork, 'should return correct consensus type')
-    st.equal(
+    assert.equal(
       c.consensusAlgorithm(),
       ConsensusAlgorithm.Ethash,
-      'should return correct consensus algorithm'
+      'should return correct consensus algorithm',
     )
-    st.deepEqual(c.consensusConfig(), {}, 'should return empty dictionary for consensus config')
+    assert.deepEqual(c.consensusConfig(), {}, 'should return empty dictionary for consensus config')
 
-    c = new Common({ chain: 'rinkeby', hardfork: 'chainstart' })
-    st.equal(c.hardforks()[3]['block'], 3, 'should return correct hardfork data')
-    st.equal(typeof c.bootstrapNodes()[0].port, 'number', 'should return a port as number')
-    st.equal(
+    c = new Common({ chain: Goerli, hardfork: 'spuriousDragon' })
+    assert.equal(c.hardforks()[3]['block'], 0, 'should return correct hardfork data')
+    assert.equal(typeof c.bootstrapNodes()[0].port, 'number', 'should return a port as number')
+    assert.equal(
       c.consensusType(),
       ConsensusType.ProofOfAuthority,
-      'should return correct consensus type'
+      'should return correct consensus type',
     )
-    st.equal(
+    assert.equal(
       c.consensusAlgorithm(),
       ConsensusAlgorithm.Clique,
-      'should return correct consensus algorithm'
+      'should return correct consensus algorithm',
     )
-    st.equal(c.consensusConfig().epoch, 30000, 'should return correct consensus config parameters')
-    st.end()
+    assert.equal(
+      c.consensusConfig().epoch,
+      30000,
+      'should return correct consensus config parameters',
+    )
   })
 
-  t.test('Should provide the bootnode information in a uniform way', function (st: tape.Test) {
-    const configs = ['mainnet', 'ropsten', 'rinkeby', 'goerli']
+  it('Should provide the bootnode information in a uniform way', () => {
+    const configs = [Mainnet, Goerli]
     for (const network of configs) {
       const c = new Common({ chain: network })
       const bootnode = c.bootstrapNodes()[0]
-      st.equal(typeof bootnode.ip, 'string', 'returns the ip as string')
-      st.equal(typeof bootnode.port, 'number', 'returns the port as number')
-      st.equal(typeof bootnode.id, 'string', 'returns the id as string')
-      st.equal(
+      assert.equal(typeof bootnode.ip, 'string', 'returns the ip as string')
+      assert.equal(typeof bootnode.port, 'number', 'returns the port as number')
+      assert.equal(typeof bootnode.id, 'string', 'returns the id as string')
+      assert.equal(
         typeof bootnode.location,
         'string',
-        'returns the location as string (empty string if unavailable)'
+        'returns the location as string (empty string if unavailable)',
       )
-      st.equal(
+      assert.equal(
         typeof bootnode.comment,
         'string',
-        'returns a comment as string (empty string if unavailable)'
+        'returns a comment as string (empty string if unavailable)',
       )
     }
-    st.end()
   })
 
-  t.test('Should provide DNS network information in a uniform way', function (st: tape.Test) {
-    const configs = ['mainnet', 'ropsten', 'rinkeby', 'goerli']
+  it('Should provide DNS network information in a uniform way', () => {
+    const configs = [Mainnet, Goerli]
     for (const network of configs) {
       const c = new Common({ chain: network })
       const dnsNetworks = c.dnsNetworks()
-      st.ok(Array.isArray(dnsNetworks), 'is an array')
-      st.equal(typeof dnsNetworks[0], 'string', 'returns the DNS ENR url as a string')
+      assert.ok(Array.isArray(dnsNetworks), 'is an array')
+      assert.equal(typeof dnsNetworks[0], 'string', 'returns the DNS ENR url as a string')
     }
-    st.end()
   })
 })
 
-tape('[Common]: isSupportedChainId static method', function (t: tape.Test) {
-  t.test('Should return true for supported chainId', function (st: tape.Test) {
-    st.equal(Common.isSupportedChainId(BigInt(1)), true, 'returns true')
-    st.end()
+describe('[Common]: copy() listener tests', () => {
+  it('Should work', () => {
+    const common = new Common({ chain: Mainnet })
+    // Add two listeners
+    common.events.on('hardforkChanged', () => {})
+    common.events.on('hardforkChanged', () => {})
+    const commonCopy = common.copy()
+    assert.equal(
+      common.events.listenerCount('hardforkChanged'),
+      2,
+      'original common instance should have two listeners',
+    )
+    assert.equal(
+      commonCopy.events.listenerCount('hardforkChanged'),
+      0,
+      'copied common instance should have zero listeners',
+    )
   })
-
-  t.test('Should return false for unsupported chainId', function (st: tape.Test) {
-    st.equal(Common.isSupportedChainId(BigInt(0)), false, 'returns false')
-    st.end()
-  })
-})
-
-tape('[Common]: copy() listener tests', (t) => {
-  const common = new Common({ chain: 'mainnet' })
-  // Add two listeners
-  common.on('hardforkChanged', () => {})
-  common.on('hardforkChanged', () => {})
-  const commonCopy = common.copy()
-  t.equal(
-    common.listenerCount('hardforkChanged'),
-    2,
-    'original common instance should have two listeners'
-  )
-  t.equal(
-    commonCopy.listenerCount('hardforkChanged'),
-    0,
-    'copied common instance should have zero listeners'
-  )
-  t.end()
 })

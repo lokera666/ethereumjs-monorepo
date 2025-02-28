@@ -11,6 +11,8 @@ state root field with a status code field (EIP-658)
 
   ↳ **`PostByzantiumTxReceipt`**
 
+  ↳↳ [`EIP4844BlobTxReceipt`](EIP4844BlobTxReceipt.md)
+
 ## Table of contents
 
 ### Properties
@@ -24,7 +26,7 @@ state root field with a status code field (EIP-658)
 
 ### bitvector
 
-• **bitvector**: `Buffer`
+• **bitvector**: `Uint8Array`
 
 Bloom bitvector
 
@@ -34,7 +36,7 @@ Bloom bitvector
 
 #### Defined in
 
-[packages/vm/src/types.ts:22](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L22)
+[vm/src/types.ts:21](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L21)
 
 ___
 
@@ -50,7 +52,7 @@ Cumulative gas used in the block including this tx
 
 #### Defined in
 
-[packages/vm/src/types.ts:18](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L18)
+[vm/src/types.ts:17](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L17)
 
 ___
 
@@ -66,7 +68,7 @@ Logs emitted
 
 #### Defined in
 
-[packages/vm/src/types.ts:26](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L26)
+[vm/src/types.ts:25](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L25)
 
 ___
 
@@ -74,8 +76,8 @@ ___
 
 • **status**: ``0`` \| ``1``
 
-Status of transaction, `1` if successful, `0` if an exception occured
+Status of transaction, `1` if successful, `0` if an exception occurred
 
 #### Defined in
 
-[packages/vm/src/types.ts:48](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L48)
+[vm/src/types.ts:47](https://github.com/ethereumjs/ethereumjs-monorepo/blob/master/packages/vm/src/types.ts#L47)

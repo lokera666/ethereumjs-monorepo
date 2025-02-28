@@ -1,25 +1,26 @@
-import * as tape from 'tape'
-import * as td from 'testdouble'
+import { createBlockHeader } from '@ethereumjs/block'
+import { Hardfork } from '@ethereumjs/common'
+import { KECCAK256_RLP } from '@ethereumjs/util'
+import { assert, describe, it, vi } from 'vitest'
 
-import { Chain } from '../../../lib/blockchain/chain'
-import { Config } from '../../../lib/config'
-import { Event } from '../../../lib/types'
-import { wait } from '../../integration/util'
+import { Chain } from '../../../src/blockchain/chain.js'
+import { Config } from '../../../src/config.js'
+import { Event } from '../../../src/types.js'
+import { wait } from '../../integration/util.js'
+class PeerPool {
+  idle() {}
+  ban() {}
+}
+PeerPool.prototype.idle = vi.fn()
+PeerPool.prototype.ban = vi.fn()
 
-tape('[BlockFetcher]', async (t) => {
-  class PeerPool {
-    idle() {}
-    ban() {}
-  }
-  PeerPool.prototype.idle = td.func<any>()
-  PeerPool.prototype.ban = td.func<any>()
+const { BlockFetcher } = await import('../../../src/sync/fetcher/blockfetcher.js')
 
-  const { BlockFetcher } = await import('../../../lib/sync/fetcher/blockfetcher')
-
-  t.test('should start/stop', async (t) => {
-    const config = new Config({ maxPerRequest: 5, transports: [] })
+describe('[BlockFetcher]', async () => {
+  it('should start/stop', async () => {
+    const config = new Config({ maxPerRequest: 5 })
     const pool = new PeerPool() as any
-    const chain = new Chain({ config })
+    const chain = await Chain.create({ config })
     const fetcher = new BlockFetcher({
       config,
       pool,
@@ -29,21 +30,20 @@ tape('[BlockFetcher]', async (t) => {
       timeout: 5,
     })
     fetcher.next = () => false
-    t.notOk((fetcher as any).running, 'not started')
+    assert.notOk((fetcher as any).running, 'not started')
     void fetcher.fetch()
-    t.equals((fetcher as any).in.length, 2, 'added 2 tasks')
+    assert.equal((fetcher as any).in.length, 2, 'added 2 tasks')
     await wait(100)
-    t.ok((fetcher as any).running, 'started')
+    assert.ok((fetcher as any).running, 'started')
     fetcher.destroy()
     await wait(100)
-    t.notOk((fetcher as any).running, 'stopped')
-    t.end()
+    assert.notOk((fetcher as any).running, 'stopped')
   })
 
-  t.test('enqueueByNumberList()', async (t) => {
-    const config = new Config({ maxPerRequest: 5, transports: [] })
+  it('enqueueByNumberList()', async () => {
+    const config = new Config({ maxPerRequest: 5 })
     const pool = new PeerPool() as any
-    const chain = new Chain({ config })
+    const chain = await Chain.create({ config })
     const fetcher = new BlockFetcher({
       config,
       pool,
@@ -53,7 +53,7 @@ tape('[BlockFetcher]', async (t) => {
       timeout: 5,
     })
     void fetcher.fetch()
-    t.equals((fetcher as any).in.length, 2, 'added 2 tasks')
+    assert.equal((fetcher as any).in.length, 2, 'added 2 tasks')
     await wait(100)
 
     let blockNumberList = [BigInt(11), BigInt(12)]
@@ -61,17 +61,17 @@ tape('[BlockFetcher]', async (t) => {
     let max = BigInt(12)
     fetcher.enqueueByNumberList(blockNumberList, min, max)
 
-    t.equals((fetcher as any).in.length, 3, '1 new task for two subsequent block numbers')
+    assert.equal((fetcher as any).in.length, 3, '1 new task for two subsequent block numbers')
 
     blockNumberList = [BigInt(13), BigInt(15)]
     min = BigInt(13)
     max = BigInt(15)
     fetcher.enqueueByNumberList(blockNumberList, min, max)
-    t.equals((fetcher as any).in.length, 3, 'no new task added only the height changed')
-    t.equals(
+    assert.equal((fetcher as any).in.length, 3, 'no new task added only the height changed')
+    assert.equal(
       fetcher.first + fetcher.count - BigInt(1) === BigInt(15),
       true,
-      'height should now be 15'
+      'height should now be 15',
     )
 
     // Clear fetcher queue for next test of gap when following head
@@ -80,20 +80,19 @@ tape('[BlockFetcher]', async (t) => {
     min = BigInt(50)
     max = BigInt(51)
     fetcher.enqueueByNumberList(blockNumberList, min, max)
-    t.equals(
+    assert.equal(
       (fetcher as any).in.length,
       11,
-      '10 new tasks to catch up to head (1-49, 5 per request), 1 new task for subsequent block numbers (50-51)'
+      '10 new tasks to catch up to head (1-49, 5 per request), 1 new task for subsequent block numbers (50-51)',
     )
 
     fetcher.destroy()
-    t.end()
   })
 
-  t.test('should process', (t) => {
-    const config = new Config({ transports: [] })
+  it('should process', async () => {
+    const config = new Config({ accountCache: 10000, storageCache: 1000 })
     const pool = new PeerPool() as any
-    const chain = new Chain({ config })
+    const chain = await Chain.create({ config })
     const fetcher = new BlockFetcher({
       config,
       pool,
@@ -102,15 +101,17 @@ tape('[BlockFetcher]', async (t) => {
       count: BigInt(0),
     })
     const blocks: any = [{ header: { number: 1 } }, { header: { number: 2 } }]
-    t.deepEquals(fetcher.process({ task: { count: 2 } } as any, blocks), blocks, 'got results')
-    t.notOk(fetcher.process({ task: { count: 2 } } as any, { blocks: [] } as any), 'bad results')
-    t.end()
+    assert.deepEqual(fetcher.process({ task: { count: 2 } } as any, blocks), blocks, 'got results')
+    assert.notOk(
+      fetcher.process({ task: { count: 2 } } as any, { blocks: [] } as any),
+      'bad results',
+    )
   })
 
-  t.test('should adopt correctly', (t) => {
-    const config = new Config({ transports: [] })
+  it('should adopt correctly', async () => {
+    const config = new Config({ accountCache: 10000, storageCache: 1000 })
     const pool = new PeerPool() as any
-    const chain = new Chain({ config })
+    const chain = await Chain.create({ config })
     const fetcher = new BlockFetcher({
       config,
       pool,
@@ -124,21 +125,22 @@ tape('[BlockFetcher]', async (t) => {
     fetcher.enqueueTask(task)
     const job = (fetcher as any).in.peek()
     let results = fetcher.process(job as any, blocks)
-    t.equal((fetcher as any).in.length, 1, 'Fetcher should still have same job')
-    t.equal(job?.partialResult?.length, 2, 'Should have two partial results')
-    t.equal(results, undefined, 'Process should not return full results yet')
+    assert.equal((fetcher as any).in.length, 1, 'Fetcher should still have same job')
+    assert.equal(job?.partialResult?.length, 2, 'Should have two partial results')
+    assert.equal(results, undefined, 'Process should not return full results yet')
 
     const remainingBlocks: any = [{ header: { number: 3 } }]
     results = fetcher.process(job as any, remainingBlocks)
-    t.equal(results?.length, 3, 'Should return full results')
-
-    t.end()
+    assert.equal(results?.length, 3, 'Should return full results')
   })
 
-  t.test('should find a fetchable peer', async (t) => {
-    const config = new Config({ transports: [] })
+  it('should find a fetchable peer', async () => {
+    const config = new Config({ accountCache: 10000, storageCache: 1000 })
     const pool = new PeerPool() as any
-    const chain = new Chain({ config })
+    pool.idle = vi.fn(() => {
+      return 'peer0'
+    })
+    const chain = await Chain.create({ config })
     const fetcher = new BlockFetcher({
       config,
       pool,
@@ -146,15 +148,13 @@ tape('[BlockFetcher]', async (t) => {
       first: BigInt(0),
       count: BigInt(0),
     })
-    td.when((fetcher as any).pool.idle(td.matchers.anything())).thenReturn('peer0')
-    t.equals(fetcher.peer(), 'peer0', 'found peer')
-    t.end()
+    assert.equal(fetcher.peer(), 'peer0' as any, 'found peer')
   })
 
-  t.test('should request correctly', async (t) => {
-    const config = new Config({ transports: [] })
+  it('should request correctly', async () => {
+    const config = new Config({ accountCache: 10000, storageCache: 1000 })
     const pool = new PeerPool() as any
-    const chain = new Chain({ config })
+    const chain = await Chain.create({ config })
     const fetcher = new BlockFetcher({
       config,
       pool,
@@ -166,63 +166,104 @@ tape('[BlockFetcher]', async (t) => {
 
     const task = { count: 3, first: BigInt(1) }
     const peer = {
-      eth: { getBlockBodies: td.func<any>(), getBlockHeaders: td.func<any>() },
+      eth: {
+        getBlockBodies: vi.fn(),
+        getBlockHeaders: vi.fn((input) => {
+          const expected = {
+            block: task.first + BigInt(partialResult.length),
+            max: task.count - partialResult.length,
+            reverse: false,
+          }
+          assert.deepEqual(input, expected)
+        }),
+      },
       id: 'random',
       address: 'random',
+      latest: vi.fn(),
     }
     const job = { peer, partialResult, task }
     await fetcher.request(job as any)
-    td.verify(
-      job.peer.eth.getBlockHeaders({
-        block: job.task.first + BigInt(partialResult.length),
-        max: job.task.count - partialResult.length,
-        reverse: false,
-      })
-    )
-    t.end()
   })
 
-  t.test('store()', async (st) => {
-    td.reset()
-    st.plan(4)
+  it('should parse bodies correctly', async () => {
+    const config = new Config({ accountCache: 10000, storageCache: 1000 })
+    config.chainCommon.getHardforkBy = vi.fn((input) => {
+      if (input['blockNumber'] !== undefined && input['timestamp'] !== undefined)
+        return Hardfork.Shanghai
 
-    const config = new Config({ maxPerRequest: 5, transports: [] })
+      if (input['blockNumber'] !== undefined) return Hardfork.Shanghai
+
+      if (input['blockNumber'] !== undefined && input['timestamp'] !== undefined)
+        return Hardfork.Shanghai
+      throw new Error('unknown hardfork')
+    })
     const pool = new PeerPool() as any
-    const chain = new Chain({ config })
-    chain.putBlocks = td.func<any>()
+    const chain = await Chain.create({ config })
     const fetcher = new BlockFetcher({
       config,
       pool,
       chain,
-      first: BigInt(1),
-      count: BigInt(10),
-      timeout: 5,
+      first: BigInt(0),
+      count: BigInt(0),
     })
-    td.when(chain.putBlocks(td.matchers.anything())).thenReject(
-      new Error('could not find parent header')
+
+    const shanghaiHeader = createBlockHeader(
+      { number: 1, withdrawalsRoot: KECCAK256_RLP },
+      { common: config.chainCommon, setHardfork: true },
     )
+
+    const task = { count: 1, first: BigInt(1) }
+    const peer = {
+      eth: {
+        getBlockBodies: vi.fn(() => {
+          return [0, [[[], [], []]]]
+        }),
+        getBlockHeaders: vi.fn(() => {
+          return [0, [shanghaiHeader]]
+        }),
+      },
+      id: 'random',
+      address: 'random',
+      latest: vi.fn(),
+    }
+    const job = { peer, task }
+    const resp = await fetcher.request(job as any)
+    assert.equal(resp.length, 1, 'shanghai block should have been returned')
+    assert.equal(resp[0].withdrawals?.length, 0, 'should have withdrawals array')
+  })
+})
+describe('store()', async () => {
+  const config = new Config({ maxPerRequest: 5 })
+  const pool = new PeerPool() as any
+  const chain = await Chain.create({ config })
+  const fetcher = new BlockFetcher({
+    config,
+    pool,
+    chain,
+    first: BigInt(1),
+    count: BigInt(10),
+    timeout: 5,
+  })
+  it('should error', async () => {
+    chain.putBlocks = vi.fn().mockRejectedValueOnce(new Error('could not find parent header'))
     try {
       await fetcher.store([])
-      st.fail('fetcher store should have errored')
+      assert.fail('fetcher store should have errored')
     } catch (err: any) {
-      st.equal(err.message, 'could not find parent header', 'store() threw on invalid block')
+      assert.equal(err.message, 'could not find parent header', 'store() threw on invalid block')
       const { destroyFetcher, banPeer } = fetcher.processStoreError(err, {
         first: BigInt(1),
         count: 10,
       })
-      st.equal(destroyFetcher, false, 'fetcher should not be destroyed on this error')
-      st.equal(banPeer, true, 'peer should be banned on this error')
+      assert.equal(destroyFetcher, false, 'fetcher should not be destroyed on this error')
+      assert.equal(banPeer, true, 'peer should be banned on this error')
     }
-    td.reset()
-    chain.putBlocks = td.func<any>()
-    td.when(chain.putBlocks(td.matchers.anything())).thenResolve(1)
-    config.events.on(Event.SYNC_FETCHED_BLOCKS, () =>
-      st.pass('store() emitted SYNC_FETCHED_BLOCKS event on putting blocks')
-    )
-    await fetcher.store([])
   })
-  t.test('should reset td', (t) => {
-    td.reset()
-    t.end()
-  })
+  chain.putBlocks = vi.fn().mockResolvedValueOnce(1)
+  config.events.on(Event.SYNC_FETCHED_BLOCKS, () =>
+    it('should emit fetched blocks event', () => {
+      assert.ok(true, 'store() emitted SYNC_FETCHED_BLOCKS event on putting blocks')
+    }),
+  )
+  await fetcher.store([])
 })

@@ -1,84 +1,86 @@
-import { Chain, Common, Hardfork } from '@ethereumjs/common'
-import { AccessListEIP2930Transaction } from '@ethereumjs/tx'
-import { Account, Address, bufferToHex } from '@ethereumjs/util'
-import * as tape from 'tape'
+import { Common, Hardfork, Mainnet } from '@ethereumjs/common'
+import { createAccessList2930Tx } from '@ethereumjs/tx'
+import {
+  Address,
+  bytesToHex,
+  createAccount,
+  createAddressFromPrivateKey,
+  hexToBytes,
+} from '@ethereumjs/util'
+import { assert, describe, it } from 'vitest'
 
-import { VM } from '../../../src/vm'
+import { createVM, runTx } from '../../../src/index.js'
 
 const common = new Common({
   eips: [2718, 2929, 2930],
-  chain: Chain.Mainnet,
+  chain: Mainnet,
   hardfork: Hardfork.Berlin,
 })
 
-const validAddress = Buffer.from('00000000000000000000000000000000000000ff', 'hex')
-const validSlot = Buffer.from('00'.repeat(32), 'hex')
+const validAddress = hexToBytes('0x00000000000000000000000000000000000000ff')
+const validSlot = hexToBytes(`0x${'00'.repeat(32)}`)
 
 // setup the accounts for this test
-const privateKey = Buffer.from(
-  'e331b6d69882b4cb4ea581d88e0b604039a3de5967688d3dcffdd2270c0fd109',
-  'hex'
-)
+const privateKey = hexToBytes('0xe331b6d69882b4cb4ea581d88e0b604039a3de5967688d3dcffdd2270c0fd109')
 const contractAddress = new Address(validAddress)
 
-tape('EIP-2930 Optional Access Lists tests', (t) => {
-  t.test('VM should charge the right gas when using access list transactions', async (st) => {
+describe('EIP-2930 Optional Access Lists tests', () => {
+  it('VM should charge the right gas when using access list transactions', async () => {
     const access = [
       {
-        address: bufferToHex(validAddress),
-        storageKeys: [bufferToHex(validSlot)],
+        address: bytesToHex(validAddress),
+        storageKeys: [bytesToHex(validSlot)],
       },
     ]
-    const txnWithAccessList = AccessListEIP2930Transaction.fromTxData(
+    const txnWithAccessList = createAccessList2930Tx(
       {
         accessList: access,
         chainId: BigInt(1),
         gasLimit: BigInt(100000),
         to: contractAddress,
       },
-      { common }
+      { common },
     ).sign(privateKey)
-    const txnWithoutAccessList = AccessListEIP2930Transaction.fromTxData(
+    const txnWithoutAccessList = createAccessList2930Tx(
       {
         accessList: [],
         chainId: BigInt(1),
         gasLimit: BigInt(100000),
         to: contractAddress,
       },
-      { common }
+      { common },
     ).sign(privateKey)
 
-    const vm = await VM.create({ common })
+    const vm = await createVM({ common })
 
     // contract code PUSH1 0x00 SLOAD STOP
-    await vm.stateManager.putContractCode(contractAddress, Buffer.from('60005400', 'hex'))
+    await vm.stateManager.putCode(contractAddress, hexToBytes('0x60005400'))
 
-    const address = Address.fromPrivateKey(privateKey)
+    const address = createAddressFromPrivateKey(privateKey)
     const initialBalance = BigInt(10) ** BigInt(18)
 
     const account = await vm.stateManager.getAccount(address)
     await vm.stateManager.putAccount(
       address,
-      Account.fromAccountData({ ...account, balance: initialBalance })
+      createAccount({ ...account, balance: initialBalance }),
     )
 
     let trace: any = []
 
-    vm.evm.events!.on('step', (o: any) => {
+    vm.evm.events!.on('step', (o, resolve) => {
       trace.push([o.opcode.name, o.gasLeft])
+      resolve?.()
     })
 
-    await vm.runTx({ tx: txnWithAccessList })
-    st.ok(trace[1][0] === 'SLOAD')
+    await runTx(vm, { tx: txnWithAccessList })
+    assert.ok(trace[1][0] === 'SLOAD')
     let gasUsed = trace[1][1] - trace[2][1]
-    st.equal(gasUsed, BigInt(100), 'charge warm sload gas')
+    assert.equal(gasUsed, 100, 'charge warm sload gas')
 
     trace = []
-    await vm.runTx({ tx: txnWithoutAccessList, skipNonce: true })
-    st.ok(trace[1][0] === 'SLOAD')
+    await runTx(vm, { tx: txnWithoutAccessList, skipNonce: true })
+    assert.ok(trace[1][0] === 'SLOAD')
     gasUsed = trace[1][1] - trace[2][1]
-    st.equal(gasUsed, BigInt(2100), 'charge cold sload gas')
-
-    st.end()
+    assert.equal(gasUsed, 2100, 'charge cold sload gas')
   })
 })
